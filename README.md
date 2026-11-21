@@ -14,6 +14,7 @@ cmake -S . -B build -G Ninja && cmake --build build
 ./build/pkgtop --list --sizes
 ./build/pkgtop --caches
 ./build/pkgtop --path        # every $PATH binary: owner, shadowed/shim/broken flags
+./build/pkgtop --stale       # packages by bloat score: size x days since last use
 ```
 
 The TUI's dependency, [FTXUI](https://github.com/ArthurSonzogni/FTXUI), is fetched by CMake on first configure.

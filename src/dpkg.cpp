@@ -66,14 +66,14 @@ ScanResult scan_dpkg(const char* path) {
     return parse_dpkg_status(f->text);
 }
 
-DiskUsage dpkg_package_size(const Package& p, const char* info_dir) {
+std::optional<std::vector<std::string>> dpkg_files(const Package& p, const char* info_dir) {
     // Multi-Arch: same packages use name:arch.list; everything else uses name.list.
     auto base = std::string{info_dir} + "/" + p.name;
     auto f = map_file((base + ".list").c_str());
     if (f && f->text.empty())
         f = map_file((base + ":" + p.arch + ".list").c_str());
     if (!f)
-        return {.skipped = 1};
+        return std::nullopt;
 
     std::vector<std::string> paths;
     for (auto t = f->text; !t.empty();) {
@@ -82,5 +82,10 @@ DiskUsage dpkg_package_size(const Package& p, const char* info_dir) {
             paths.emplace_back(line);
         t = nl == t.npos ? std::string_view{} : t.substr(nl + 1);
     }
-    return files_usage(paths);
+    return paths;
+}
+
+DiskUsage dpkg_package_size(const Package& p, const char* info_dir) {
+    auto paths = dpkg_files(p, info_dir);
+    return paths ? files_usage(*paths) : DiskUsage{.skipped = 1};
 }

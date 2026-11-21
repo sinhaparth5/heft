@@ -47,15 +47,21 @@ ScanResult scan_pacman(const std::string& local_dir) {
     return out;
 }
 
-DiskUsage pacman_package_size(const Package& p, const std::string& local_dir) {
+std::optional<std::vector<std::string>> pacman_files(const Package& p,
+                                                     const std::string& local_dir) {
     // The db entry is "<name>-<version>"; %FILES% paths are relative to /.
     auto f = map_file((local_dir + "/" + p.name + "-" + p.version + "/files").c_str());
     if (!f)
-        return {.skipped = 1};
+        return std::nullopt;
     std::vector<std::string> paths;
     each_value(f->text, [&](std::string_view sec, std::string_view v) {
         if (sec == "%FILES%" && !v.ends_with('/'))
             paths.push_back("/" + std::string{v});
     });
-    return files_usage(paths);
+    return paths;
+}
+
+DiskUsage pacman_package_size(const Package& p, const std::string& local_dir) {
+    auto paths = pacman_files(p, local_dir);
+    return paths ? files_usage(*paths) : DiskUsage{.skipped = 1};
 }

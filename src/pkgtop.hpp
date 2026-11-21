@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -22,6 +23,14 @@ DiskUsage disk_usage(const char* path);                    // file or whole dire
 DiskUsage files_usage(std::span<const std::string> paths); // explicit file list; dirs ignored
 std::string human_size(uint64_t bytes);                    // 1536 -> "1.5K"
 
+// When a package was last used (usage.cpp), from shell history and binary atimes.
+struct Usage {
+    int64_t last = 0; // unix seconds: last use, or install time when used == false
+    enum Confidence : uint8_t { none, low, medium, high } conf = none; // none = no binaries
+    std::string_view source; // what `last` came from, for the Details pane
+    bool used = false;       // false = no sign of use since install
+};
+
 struct Package {
     std::string_view ecosystem; // static literal, e.g. "apt"
     std::string name;
@@ -31,6 +40,7 @@ struct Package {
     bool essential = false;        // never offer uninstall
     std::string arch;              // apt only: locates name:arch.list for Multi-Arch packages
     std::optional<DiskUsage> size; // filled in later, never during scan
+    std::optional<Usage> usage;    // likewise
 };
 
 struct Cache {
@@ -49,6 +59,11 @@ DiskUsage dpkg_package_size(const Package& p, const char* info_dir = "/var/lib/d
 DiskUsage pacman_package_size(const Package& p,
                               const std::string& local_dir = "/var/lib/pacman/local");
 DiskUsage bins_usage(const Package& p); // root/<bin> for each bin
+// Manifest file lists (absolute paths); nullopt when the manifest can't be read.
+std::optional<std::vector<std::string>> dpkg_files(const Package& p,
+                                                   const char* info_dir = "/var/lib/dpkg/info");
+std::optional<std::vector<std::string>>
+pacman_files(const Package& p, const std::string& local_dir = "/var/lib/pacman/local");
 
 // Read-only mmap of a whole file. Missing or empty file = empty text, not an error.
 struct MappedFile {
@@ -120,6 +135,24 @@ struct PathEntry {
     bool dangling = false;  // symlink whose chain ends nowhere; reported, never deleted
 };
 std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Package>& pkgs);
+
+// Shell history: command name -> last run (unix seconds), 0 = run, but the history has no
+// timestamps (bash without HISTTIMEFORMAT, plain zsh). Reads zsh, bash and fish formats.
+using History = std::unordered_map<std::string, int64_t>;
+std::vector<std::string_view> command_names(std::string_view line); // "sudo a | b" -> a, b
+void parse_history(std::string_view text, History& out);
+History load_history(const std::string& home); // $HISTFILE, zsh, bash, fish
+
+using Bin = std::pair<std::string, std::string>; // command name, file it runs
+// apt/pacman: bin-dir files from the manifest. Others: their $PATH entries (index = pkg).
+std::vector<Bin> package_bins(const Package& p, int index, std::span<const PathEntry> path);
+Usage bin_usage(std::span<const Bin> bins, const History& h);
+std::string ago(int64_t ts, int64_t now); // "today", "12d ago", "5mo ago", "3y ago"
+// "● 12d ago", "◌ never", "◌ in history": confidence glyph (● high ◐ medium ◌ low) + when.
+std::string last_active(const Usage& u, int64_t now);
+// Bloat score: bytes x days idle (min 1). -1 until both size and usage are known, or when
+// usage can't be told (no binaries).
+double bloat(const Package& p, int64_t now);
 
 // tui.cpp: full-screen UI. Sizes are computed in the background; returns the exit code.
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,

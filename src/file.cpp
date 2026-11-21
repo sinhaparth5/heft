@@ -18,7 +18,11 @@ std::expected<MappedFile, std::string> map_file(const char* path) {
     auto fail = [&](const char* what, int e) {
         return std::unexpected(std::string{path} + ": " + what + std::strerror(e));
     };
-    int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    // O_NOATIME so reading a binary (go buildinfo) doesn't look like a use of it. The kernel
+    // only allows it on files we own, so retry without.
+    int fd = ::open(path, O_RDONLY | O_CLOEXEC | O_NOATIME);
+    if (fd < 0 && errno == EPERM)
+        fd = ::open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return errno == ENOENT ? std::expected<MappedFile, std::string>{} : fail("", errno);
 

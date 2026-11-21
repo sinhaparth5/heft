@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <ranges>
 #include <thread>
 
@@ -91,8 +92,8 @@ struct App {
     size_t providers = 0;               // how many of ecos come from packages and caches
 
     int tab = 0;
-    std::array<int, 3> cur{}; // cursor row in the current view, per table tab
-    std::array<int, 3> top{}; // first visible row, per table tab
+    std::array<int, 4> cur{}; // cursor row in the current view, per tab
+    std::array<int, 4> top{}; // first visible row, per tab
     int page = 10;            // visible table rows, from the last render
     int sort = 0;
     bool rev = false;
@@ -101,11 +102,16 @@ struct App {
     std::string eco; // "" = all
     bool keys = true;
 
-    std::atomic<size_t> done{0};
+    std::atomic<size_t> done{0}; // sizes + usage results computed so far
     size_t total = 0;
+    int64_t now = std::time(nullptr);
 
-    bool table_tab() const { return tab < 3; }
     size_t count() const { return tab == 2 ? path.size() : tab == 1 ? caches.size() : pkgs.size(); }
+    // Stale lists packages whose use can be told (they have binaries), minus essential ones.
+    bool in_tab(size_t i) const {
+        return tab != 3 ||
+               (pkgs[i].usage && pkgs[i].usage->conf != Usage::none && !pkgs[i].essential);
+    }
 
     Row row(size_t i) const {
         if (tab == 2) {
@@ -118,6 +124,8 @@ struct App {
                     &c.size};
         }
         auto& p = pkgs[i];
+        if (tab == 3)
+            return {p.ecosystem, p.name, p.usage ? last_active(*p.usage, now) : "", &p.size};
         return {p.ecosystem, p.name, p.version, &p.size};
     }
 
@@ -132,7 +140,8 @@ struct App {
         };
         std::vector<size_t> v;
         for (size_t i = 0; i < count(); ++i)
-            if (auto r = row(i); (eco.empty() || r.eco == eco) && fuzzy(r.name, filter))
+            if (auto r = row(i);
+                in_tab(i) && (eco.empty() || r.eco == eco) && fuzzy(r.name, filter))
                 v.push_back(i);
         auto bytes = [&](size_t i) {
             auto s = row(i).size;
@@ -140,6 +149,8 @@ struct App {
         };
         auto less = [&](size_t x, size_t y) {
             auto a = row(x), b = row(y);
+            if (sort == 0 && tab == 3) // bloat: big and long idle first
+                return bloat(pkgs[x], now) > bloat(pkgs[y], now);
             if (sort == 0)
                 return bytes(x) > bytes(y);
             if (sort == 1)
@@ -158,8 +169,7 @@ struct App {
     int pos(size_t n) { return cur[tab] = std::clamp(cur[tab], 0, std::max(0, int(n) - 1)); }
 
     void move(int delta) {
-        if (table_tab())
-            cur[tab] = std::clamp(cur[tab] + delta, 0, std::max(0, int(view().size()) - 1));
+        cur[tab] = std::clamp(cur[tab] + delta, 0, std::max(0, int(view().size()) - 1));
     }
 
     uint64_t bytes_of(std::string_view e, bool caches_tab) const {
@@ -231,7 +241,7 @@ struct Ui {
                           std::chrono::steady_clock::now().time_since_epoch())
                           .count();
             e.push_back(text(" "));
-            e.push_back(text(std::format(" {} sizing {}/{} ", spin[ms / 100 % 8], d, a.total)) |
+            e.push_back(text(std::format(" {} loading {}/{} ", spin[ms / 100 % 8], d, a.total)) |
                         bgcolor(P.bg_alt) | color(P.warn));
         }
         return hbox(std::move(e));
@@ -244,7 +254,10 @@ struct Ui {
                            text(std::format("{:>6} ", n))});
             return cur ? e | bold | color(P.accent) : e;
         };
-        list.push_back(line("all", a.count(), a.eco.empty()));
+        size_t all = 0;
+        for (size_t i = 0; i < a.count(); ++i)
+            all += a.in_tab(i);
+        list.push_back(line("all", all, a.eco.empty()));
 
         uint64_t max = 1;
         for (auto e : a.ecos)
@@ -252,7 +265,7 @@ struct Ui {
         for (auto e : a.ecos) {
             size_t n = 0;
             for (size_t i = 0; i < a.count(); ++i)
-                n += a.row(i).eco == e;
+                n += a.in_tab(i) && a.row(i).eco == e;
             if (n == 0)
                 continue;
             list.push_back(line(e, n, a.eco == e));
@@ -282,7 +295,7 @@ struct Ui {
         auto& top = a.top[a.tab];
         top = std::clamp(top, std::max(0, pos - h + 1), pos);
 
-        bool caches = a.tab == 1, bins = a.tab == 2;
+        bool caches = a.tab == 1, bins = a.tab == 2, stale = a.tab == 3;
         int second_w = caches ? 9 : bins ? std::clamp(width / 3, 16, 40) : 16;
         int name_w = width - (1 + 1 + second_w + 1 + 6 + 1 + 7 + 1);
         if (name_w < 16) // narrow: VERSION goes first (design/tui.md column order)
@@ -299,12 +312,14 @@ struct Ui {
         };
 
         auto sort_mark = [&](int col) { return a.sort == col ? (a.rev ? "▲" : "▼") : ""; };
-        auto [h1, h2, h3] = cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
-                                 caches ? "FILES"
-                                 : bins ? std::format("DIR{}", sort_mark(0))
-                                        : "VERSION",
-                                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
-                                 bins ? "FLAGS" : std::format("SIZE{}", sort_mark(0)), caches);
+        auto [h1, h2, h3] =
+            cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
+                 caches  ? "FILES"
+                 : bins  ? std::format("DIR{}", sort_mark(0))
+                 : stale ? "LAST ACTIVE"
+                         : "VERSION",
+                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
+                 bins ? "FLAGS" : std::format("SIZE{}", stale ? "" : sort_mark(0)), caches);
         Elements rows{hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt)};
 
         for (int k = top; k < std::min<int>(top + h, v.size()); ++k) {
@@ -398,6 +413,13 @@ struct Ui {
             kv.emplace_back("Bins", b);
         }
         sized(p.size);
+        if (p.usage && p.usage->conf != Usage::none) {
+            kv.emplace_back("Last used", last_active(*p.usage, a.now));
+            kv.emplace_back("Evidence", std::string{p.usage->source});
+            if (bloat(p, a.now) >= 0)
+                kv.emplace_back("Bloat", std::format("{} idle {}", human_size(p.size->bytes),
+                                                     ago(p.usage->last, a.now)));
+        }
         if (p.essential)
             kv.emplace_back("Essential", "yes, never uninstalled");
         return kv;
@@ -442,7 +464,7 @@ struct Ui {
     Element status_line() const {
         auto mode = a.filtering ? P.pill(" FILTER ", P.info) : P.pill(" NORMAL ", P.accent);
         std::string crumb;
-        if (a.table_tab() && a.count()) {
+        if (a.count()) {
             auto v = a.view();
             if (!v.empty()) {
                 auto r = a.row(v[a.pos(v.size())]);
@@ -452,7 +474,9 @@ struct Ui {
         auto filter = a.filtering ? a.filter + "▏" : a.filter.empty() ? "—" : a.filter;
         return hbox({mode, text(" " + crumb) | color(P.fg), filler(),
                      text(std::format("sort: {} {}   filter: {}   ",
-                                      a.tab == 2 && a.sort == 0 ? "lookup" : kSorts[a.sort],
+                                      a.sort == 0 && a.tab == 2   ? "lookup"
+                                      : a.sort == 0 && a.tab == 3 ? "bloat"
+                                                                  : kSorts[a.sort],
                                       a.rev ? "▲" : "▼", filter)) |
                          color(P.fg_dim),
                      P.pill(std::format(" {} in caches ", human_size(a.bytes_of("", true))),
@@ -469,7 +493,7 @@ struct Ui {
 
         bool left = w >= 100, right = w >= 120;
         Element body;
-        if (a.table_tab()) {
+        {
             int table_w = w - (left ? 26 : 0) - (right ? 38 : 0) - 2;
             // top bar, header row, borders, status, + keys/strip panes
             int table_h = h - 5 - (a.keys ? 3 : 0) - (right ? 0 : 3);
@@ -480,13 +504,10 @@ struct Ui {
             if (right)
                 cols.push_back(details_pane());
             body = hbox(std::move(cols)) | flex;
-        } else {
-            auto msg = "Staleness from shell history and atime lands in M6.";
-            body = pane(kTabs[a.tab], vbox({filler(), text(msg) | center, filler()}), true) | flex;
         }
 
         Elements page{top_bar(), body};
-        if (a.table_tab() && !right)
+        if (!right)
             page.push_back(details_strip());
         if (a.keys)
             page.push_back(keys());
@@ -569,7 +590,8 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     a.providers = a.ecos.size();
     for (auto& e : a.path)
         seen(e.owner);
-    a.total = a.pkgs.size() + a.caches.size();
+    size_t sizes = a.pkgs.size() + a.caches.size();
+    a.total = sizes + a.pkgs.size(); // + one usage result per package
 
     const char* nc = std::getenv("NO_COLOR");
     Palette pal(!(nc && *nc));
@@ -585,7 +607,7 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     // queue in design/architecture.md; add it when visible rows visibly wait on others.
     std::atomic<size_t> next{0};
     auto worker = [&](std::stop_token st) {
-        for (size_t i; !st.stop_requested() && (i = next++) < a.total; ++a.done) {
+        for (size_t i; !st.stop_requested() && (i = next++) < sizes; ++a.done) {
             if (i < a.pkgs.size()) {
                 auto& p = a.pkgs[i];
                 auto u = package_size(p);
@@ -612,6 +634,15 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     std::vector<std::jthread> threads;
     for (unsigned n = std::clamp(std::thread::hardware_concurrency(), 1u, 8u); n--;)
         threads.emplace_back(worker);
+    // Usage: one thread, history first. ponytail: serial; stat-only, ~100 ms for 2k packages.
+    threads.emplace_back([&](std::stop_token st) {
+        const char* h = std::getenv("HOME");
+        auto hist = load_history(h ? h : "");
+        for (size_t i = 0; i < a.pkgs.size() && !st.stop_requested(); ++i, ++a.done) {
+            auto u = bin_usage(package_bins(a.pkgs[i], int(i), a.path), hist);
+            screen.Post([&a, i, u] { a.pkgs[i].usage = u; });
+        }
+    });
     threads.emplace_back(ticker);
 
     screen.Loop(root);

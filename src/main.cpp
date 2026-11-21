@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <format>
 #include <print>
 #include <pwd.h>
@@ -161,6 +162,35 @@ int path() {
     return errs.empty() ? 0 : 1;
 }
 
+// Packages by bloat score: big and long unused first. Libraries without binaries are left
+// out (no way to tell their use), and so are essential packages.
+int stale() {
+    auto [pkgs, errs] = scan_all();
+    auto path = scan_path(env_or("PATH", ""), pkgs);
+    auto t0 = Clock::now();
+    auto hist = load_history(home());
+    int64_t now = std::time(nullptr);
+    std::vector<Package*> rows;
+    for (int i = 0; i < int(pkgs.size()); ++i) {
+        auto& p = pkgs[i];
+        p.usage = bin_usage(package_bins(p, i, path), hist);
+        if (p.usage->conf == Usage::none || p.essential)
+            continue;
+        p.size = package_size(p);
+        rows.push_back(&p);
+    }
+    auto ms = ms_since(t0);
+    std::ranges::sort(rows, std::greater{}, [&](auto* p) { return bloat(*p, now); });
+    std::println("{:<32}  {:<6}  {:>7}  {:<14}  {}", "NAME", "ECO", "SIZE", "LAST ACTIVE",
+                 "SOURCE");
+    for (auto* p : rows)
+        std::println("{:<32}  {:<6}  {:>7}  {:<14}  {}", p->name, p->ecosystem, size_cell(*p->size),
+                     last_active(*p->usage, now), p->usage->source);
+    std::println(stderr, "{} packages with binaries, {} history commands; {:.0f} ms", rows.size(),
+                 hist.size(), ms);
+    return errs.empty() ? 0 : 1;
+}
+
 int caches() {
     auto t0 = Clock::now();
     auto cs = find_caches(home());
@@ -196,12 +226,15 @@ int main(int argc, char** argv) {
         return caches();
     if (arg == "--path")
         return path();
+    if (arg == "--stale")
+        return stale();
     if (arg.empty() && ::isatty(STDIN_FILENO) && ::isatty(STDOUT_FILENO)) {
         auto inv = scan_all();
         auto path = scan_path(env_or("PATH", ""), inv.pkgs);
         return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(path),
                        std::move(inv.errors));
     }
-    std::println(stderr, "usage: pkgtop [--list [--sizes] | --caches | --path | --version]");
+    std::println(stderr,
+                 "usage: pkgtop [--list [--sizes] | --caches | --path | --stale | --version]");
     return 2;
 }

@@ -42,10 +42,11 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [x] "Which binary wins" view (PATH tab, Details lists every copy in lookup order)
 - [ ] Later: owner for pnpm's wrapper scripts (they're not links), per-package apt/pacman ownership (now `system`)
 
-## M6: Usage and staleness
-- [ ] Reverse scan of zsh/bash/fish history to get the last invocation per binary
-- [ ] Combine with atime/mtime and ecosystem activity → `Last Active` plus a confidence level
-- [ ] Bloat score: size vs. time since last use
+## M6: Usage and staleness ✅
+- [x] Scan zsh/bash/fish history for the last invocation per binary (forward scan keeping the max; files are small)
+- [x] Combine with atime (after ctime = install) → `Last Active` plus a confidence level
+- [x] Bloat score: size × days since last use (Stale tab, `--stale`)
+- [ ] Later: ecosystem activity (e.g. npm cache hits), last-used column on the Packages tab, libraries via reverse dependencies
 
 ## M7: Delegated mutation
 - [ ] Uninstall/purge command per provider
