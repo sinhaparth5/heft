@@ -10,9 +10,9 @@ Each milestone ships something runnable. Do them in order and don't start one be
 ## M1: Headless inventory (`pkgtop --list`)
 - [ ] `Package { ecosystem, name, version, root, bins }` and `Cache { ecosystem, path }`
 - [x] dpkg provider: mmap `/var/lib/dpkg/status`, parse stanzas, honor `Essential: yes`
-- [ ] cargo provider: `~/.cargo/.crates2.json`
-- [ ] Plain table output to stdout, with a startup-time measurement (target < 50 ms)
-- [ ] Fixture-based parser tests
+- [x] cargo provider: `~/.cargo/.crates.toml` (same data as `.crates2.json`, one line per install)
+- [x] Plain table output to stdout, with a startup-time measurement (target < 50 ms)
+- [x] Fixture-based parser tests
 
 ## M2: Physical disk accounting
 - [ ] `openat`/`getdents64`/`fstatat` walker: `st_blocks`, inode dedupe, no symlink follow, no `st_dev` crossing, skipped-entry counter

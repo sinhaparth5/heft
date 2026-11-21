@@ -7,6 +7,7 @@ Versioning: [CalVer](https://calver.org/) `YYYY.MM.PATCH`. PATCH starts at 0 eac
 ## [Unreleased]
 ### Added
 - `pkgtop --list`: headless inventory of installed apt packages, read directly from `/var/lib/dpkg/status` (no subprocess), with Essential flag and scan time.
+- cargo provider: packages from `$CARGO_HOME/.crates.toml` (default `~/.cargo`) with their binaries; `--list` gains a BINS column.
 
 ## [2026.11.0] - 2026-11-21
 ### Added

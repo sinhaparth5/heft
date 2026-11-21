@@ -1,12 +1,5 @@
 #include "pkgtop.hpp"
 
-#include <cerrno>
-#include <cstring>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 namespace {
 
 bool installed(std::string_view status) {
@@ -65,30 +58,8 @@ std::vector<Package> parse_dpkg_status(std::string_view text) {
 }
 
 ScanResult scan_dpkg(const char* path) {
-    int fd = ::open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
-        if (errno == ENOENT)
-            return std::vector<Package>{};
-        return std::unexpected(std::string{path} + ": " + std::strerror(errno));
-    }
-    struct stat st {};
-    if (::fstat(fd, &st) < 0) {
-        int e = errno;
-        ::close(fd);
-        return std::unexpected(std::string{path} + ": " + std::strerror(e));
-    }
-    if (st.st_size == 0) {
-        ::close(fd);
-        return std::vector<Package>{};
-    }
-    void* p = ::mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    int e = errno;
-    ::close(fd);
-    if (p == MAP_FAILED)
-        return std::unexpected(std::string{path} + ": mmap: " + std::strerror(e));
-    ::madvise(p, st.st_size, MADV_SEQUENTIAL);
-
-    auto pkgs = parse_dpkg_status({static_cast<const char*>(p), static_cast<size_t>(st.st_size)});
-    ::munmap(p, st.st_size);
-    return pkgs;
+    auto f = map_file(path);
+    if (!f)
+        return std::unexpected(f.error());
+    return parse_dpkg_status(f->text);
 }
