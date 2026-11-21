@@ -149,7 +149,7 @@ struct App {
         auto& p = pkgs[i];
         if (tab == 3)
             return {p.ecosystem, p.name, p.usage ? last_active(*p.usage, now) : "", &p.size};
-        return {p.ecosystem, p.name, p.version, &p.size};
+        return {p.ecosystem, p.name, outdated(p) ? p.version + " ↑" : p.version, &p.size};
     }
 
     // Filtered + sorted indices for the current tab. Rebuilt per frame: ~3k rows is < 1 ms.
@@ -257,7 +257,7 @@ struct App {
                 auto old = std::ranges::find_if(
                     pkgs, [&](auto& o) { return o.ecosystem == c.eco && key(o) == key(p); });
                 if (old != pkgs.end())
-                    p.size = old->size, p.usage = old->usage;
+                    p.size = old->size, p.usage = old->usage, p.latest = old->latest;
                 next.push_back(std::move(p));
             }
         pkgs = std::move(next);
@@ -509,6 +509,10 @@ struct Ui {
         auto& p = a.pkgs[i];
         kv.emplace_back(p.name, std::string{p.ecosystem});
         kv.emplace_back("Version", p.version);
+        if (p.latest)
+            kv.emplace_back("Latest", p.latest->empty() ? "? lookup failed"
+                                      : outdated(p)     ? *p.latest + " ↑ update available"
+                                                        : "✓ up to date");
         kv.emplace_back("Root", p.root.empty() ? "/ (dpkg)" : tilde(p.root));
         if (!p.arch.empty())
             kv.emplace_back("Arch", p.arch);
@@ -728,7 +732,8 @@ struct Ui {
 } // namespace
 
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
-            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan) {
+            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan,
+            bool updates) {
     App a;
     a.rescan = std::move(rescan);
     a.pkgs = std::move(pkgs);
@@ -747,7 +752,10 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     for (auto& e : a.path)
         seen(e.owner);
     size_t sizes = a.pkgs.size() + a.caches.size();
-    a.total = sizes + a.pkgs.size(); // + one usage result per package
+    a.total = sizes + a.pkgs.size();    // + one usage result per package
+    if (updates && updates_supported()) // + one per package that has a registry
+        for (auto& p : a.pkgs)
+            a.total += !update_url(p).empty();
 
     const char* nc = std::getenv("NO_COLOR");
     Palette pal(!(nc && *nc));
@@ -799,6 +807,13 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
             screen.Post([&a, i, u] { a.pkgs[i].usage = u; });
         }
     });
+    if (updates && updates_supported())
+        threads.emplace_back([&](std::stop_token st) {
+            check_updates(a.pkgs, st, [&](size_t i, std::string v) {
+                screen.Post([&a, i, v] { a.pkgs[i].latest = v; });
+                ++a.done;
+            });
+        });
     threads.emplace_back(ticker);
 
     screen.Loop(root);

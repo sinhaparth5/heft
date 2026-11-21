@@ -191,6 +191,30 @@ int stale() {
     return errs.empty() ? 0 : 1;
 }
 
+// Packages whose registry has a newer version. Opt-in: this is the only network access.
+int outdated_cmd() {
+    if (!updates_supported()) {
+        std::println(stderr, "pkgtop was built without libcurl: no update checks");
+        return 2;
+    }
+    auto [pkgs, errs] = scan_all();
+    auto t0 = Clock::now();
+    std::stop_source never;
+    size_t asked = check_updates(pkgs, never.get_token(), [&](size_t i, std::string v) {
+        pkgs[i].latest = std::move(v); // each index is written by exactly one worker
+    });
+    size_t failed = 0;
+    std::println("{:<32}  {:<5}  {:<16}  {}", "NAME", "ECO", "INSTALLED", "LATEST");
+    for (auto& p : pkgs) {
+        failed += p.latest && p.latest->empty();
+        if (outdated(p))
+            std::println("{:<32}  {:<5}  {:<16}  {}", p.name, p.ecosystem, p.version, *p.latest);
+    }
+    std::println(stderr, "{} packages checked ({} lookups failed) in {:.0f} ms", asked, failed,
+                 ms_since(t0));
+    return errs.empty() ? 0 : 1;
+}
+
 int caches() {
     auto t0 = Clock::now();
     auto cs = find_caches(home());
@@ -228,13 +252,17 @@ int main(int argc, char** argv) {
         return path();
     if (arg == "--stale")
         return stale();
-    if (arg.empty() && ::isatty(STDIN_FILENO) && ::isatty(STDOUT_FILENO)) {
+    if (arg == "--outdated")
+        return outdated_cmd();
+    if ((arg.empty() || arg == "--updates") && ::isatty(STDIN_FILENO) && ::isatty(STDOUT_FILENO)) {
         auto inv = scan_all();
         auto path = scan_path(env_or("PATH", ""), inv.pkgs);
-        return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(path),
-                       std::move(inv.errors), [] { return scan_all().pkgs; });
+        return run_tui(
+            std::move(inv.pkgs), find_caches(home()), std::move(path), std::move(inv.errors),
+            [] { return scan_all().pkgs; }, arg == "--updates");
     }
     std::println(stderr,
-                 "usage: pkgtop [--list [--sizes] | --caches | --path | --stale | --version]");
+                 "usage: pkgtop [--updates | --list [--sizes] | --caches | --path | --stale | "
+                 "--outdated | --version]");
     return 2;
 }

@@ -37,7 +37,7 @@ Panes, from the inspiration:
 | Keys panel | the hint box | Context-sensitive hints. `?` toggles it, and it's hidden by default after first run |
 | Status line | lualine | Mode pill, breadcrumb, sort/filter state, reclaimable total |
 
-Tabs: **Packages** (managed packages), **Caches** (cache stores), **PATH** (every `$PATH` binary with owner and flags; the left pane becomes **Owners** with no disk bars, the default sort is lookup order, and Details shows the lookup chain: `✓` wins, `⚠` loses to a different file, `=` same file), **Stale** (packages with binaries, essential ones excluded, sorted by bloat score = size × days idle; LAST ACTIVE shows the confidence glyph and age, Details shows the evidence).
+Tabs: **Packages** (managed packages), **Caches** (cache stores), **PATH** (every `$PATH` binary with owner and flags; the left pane becomes **Owners** with no disk bars, the default sort is lookup order, and Details shows the lookup chain: `✓` wins, `⚠` loses to a different file, `=` same file), **Stale** (packages with binaries, essential ones excluded, sorted by bloat score = size × days idle; LAST ACTIVE shows the confidence glyph and age, Details shows the evidence). With `--updates`, VERSION gets `↑` when the registry has a newer release and Details adds `Latest`.
 
 ## Responsive rules
 - **< 120 cols:** the Details pane collapses into a 3-line strip above the status line.

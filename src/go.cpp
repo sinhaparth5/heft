@@ -95,6 +95,7 @@ ScanResult scan_go(const std::string& bin_dir) {
         p.version = bi->version.empty() ? "(devel)" : bi->version;
         p.root = bin_dir;
         p.bins = {name};
+        p.module = bi->module;
         out.push_back(std::move(p));
     }
     return out;

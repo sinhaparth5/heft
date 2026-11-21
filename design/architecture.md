@@ -13,7 +13,7 @@ This is a single process on a local machine: no servers, no IPC, no database. Th
 - Correct physical sizes (hardlink dedupe, `st_blocks`)
 - A failure in any one provider never takes down the others
 
-**Out of scope (for now):** remote version checks, a size cache that persists across runs, macOS, rpm.
+**Out of scope (for now):** a size cache that persists across runs, macOS, rpm.
 
 ## Scale estimate (one workstation)
 

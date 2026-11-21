@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -36,12 +37,14 @@ struct Package {
     std::string_view ecosystem; // static literal, e.g. "apt"
     std::string name;
     std::string version;
-    std::string root;              // install root; empty when files are scattered (apt)
-    std::vector<std::string> bins; // exposed executables
-    bool essential = false;        // never offer uninstall
-    std::string arch;              // apt only: locates name:arch.list for Multi-Arch packages
-    std::optional<DiskUsage> size; // filled in later, never during scan
-    std::optional<Usage> usage;    // likewise
+    std::string root;                  // install root; empty when files are scattered (apt)
+    std::vector<std::string> bins;     // exposed executables
+    bool essential = false;            // never offer uninstall
+    std::string arch;                  // apt only: locates name:arch.list for Multi-Arch packages
+    std::optional<DiskUsage> size;     // filled in later, never during scan
+    std::optional<Usage> usage;        // likewise
+    std::string module;                // go only: main module path, for the proxy lookup
+    std::optional<std::string> latest; // registry's latest version ("" = lookup failed)
 };
 
 struct Cache {
@@ -163,7 +166,18 @@ std::vector<std::string> purge_argv(const Cache& c);
 // couldn't start. Ctrl-C reaches the child; the caller ignores it meanwhile.
 int run_foreground(const std::vector<std::string>& argv);
 
+// Opt-in update checks (updates.cpp, http.cpp). Network only on request, never on startup.
+std::string update_url(const Package& p); // "" = no registry for this ecosystem
+std::string parse_latest(std::string_view eco, std::string_view body); // "" when not found
+bool outdated(const Package& p);
+bool updates_supported(); // false when built without libcurl
+// Looks up every package that has a registry, 6 requests at a time; done(i, latest) runs on
+// the worker threads. Returns how many packages it looked up. Stops early when st does.
+size_t check_updates(const std::vector<Package>& pkgs, std::stop_token st,
+                     std::function<void(size_t, std::string)> done);
+
 // tui.cpp: full-screen UI. Sizes are computed in the background; returns the exit code.
 // rescan re-reads every provider's metadata; the TUI keeps only the mutated provider's rows.
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
-            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan);
+            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan,
+            bool updates); // updates: look up registry versions in the background

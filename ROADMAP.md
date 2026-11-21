@@ -55,7 +55,8 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [ ] Later: uninstall from the PATH tab (via the owning package), `brew uninstall --force` for extra Cellar versions, mutation while sizes are still loading (needs per-provider generations)
 
 ## M8: Optional enrichment
-- [ ] Remote "update available" checks (off by default, low priority, never blocks)
+- [x] Remote "update available" checks (off by default, low priority, never blocks): `--outdated`, `--updates`; cargo, PyPI, npm/pnpm, Go
+- [ ] Later: apt/pacman/brew update checks (local index files or formulae.brew.sh), semver-aware comparison
 - [ ] macOS support (APFS, Homebrew paths)
 
 ## Non-goals
