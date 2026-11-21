@@ -65,7 +65,7 @@ Conclusion: Stage 1 (metadata) fits easily in 50 ms on one thread. Stage 2 (sizi
 1. `u` → build `argv` from the provider. Refuse if the package is essential.
 2. Modal shows `join(argv)` and the estimated reclaim. Default focus is Cancel.
 3. `y` → `screen.WithRestoredIO([&]{ pid = posix_spawnp(argv); waitpid(pid); })()`. The child owns the TTY, so `sudo` prompts work.
-4. Back in the TUI: bump that provider's generation, re-run its `scan()` (sync, < 10 ms), and re-enqueue size jobs for its rows only.
+4. Back in the TUI: re-run the scan (sync, < 10 ms) and keep only that provider's fresh rows. Rows that survived keep their size and usage; new or changed ones are measured synchronously. Until the generation counter exists, `u`/`p` wait for loading to finish so no worker holds an index into the rows being replaced.
 5. Status line shows the exit status.
 
 ## Failure modes

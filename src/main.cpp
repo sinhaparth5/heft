@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
         auto inv = scan_all();
         auto path = scan_path(env_or("PATH", ""), inv.pkgs);
         return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(path),
-                       std::move(inv.errors));
+                       std::move(inv.errors), [] { return scan_all().pkgs; });
     }
     std::println(stderr,
                  "usage: pkgtop [--list [--sizes] | --caches | --path | --stale | --version]");

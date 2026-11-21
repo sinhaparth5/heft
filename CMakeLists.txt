@@ -25,7 +25,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 add_library(pkgtop_core STATIC
   src/file.cpp src/json.cpp src/size.cpp src/caches.cpp
   src/dpkg.cpp src/cargo.cpp src/pacman.cpp src/brew.cpp src/uv.cpp src/pipx.cpp
-  src/npm.cpp src/pnpm.cpp src/go.cpp src/path.cpp src/usage.cpp)
+  src/npm.cpp src/pnpm.cpp src/go.cpp src/path.cpp src/usage.cpp src/mutate.cpp)
 target_include_directories(pkgtop_core PUBLIC src)
 
 add_executable(pkgtop src/main.cpp src/tui.cpp)
@@ -33,7 +33,7 @@ target_link_libraries(pkgtop PRIVATE pkgtop_core ftxui::component)
 target_compile_definitions(pkgtop PRIVATE PKGTOP_VERSION="${PROJECT_VERSION}")
 
 enable_testing()
-foreach(t dpkg cargo size json providers path usage)
+foreach(t dpkg cargo size json providers path usage mutate)
   add_executable(test_${t} tests/test_${t}.cpp)
   target_link_libraries(test_${t} PRIVATE pkgtop_core)
   # Tests use assert(); keep it on in every build type.

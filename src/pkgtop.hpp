@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -154,6 +155,15 @@ std::string last_active(const Usage& u, int64_t now);
 // usage can't be told (no binaries).
 double bloat(const Package& p, int64_t now);
 
+// Mutation (mutate.cpp): the ecosystem's own command as an argv, never a shell string. Empty
+// = nothing to offer (essential package, or the tool has no such command).
+std::vector<std::string> uninstall_argv(const Package& p);
+std::vector<std::string> purge_argv(const Cache& c);
+// Runs argv on the inherited terminal and waits: exit code, 128 + signal, or 127 when it
+// couldn't start. Ctrl-C reaches the child; the caller ignores it meanwhile.
+int run_foreground(const std::vector<std::string>& argv);
+
 // tui.cpp: full-screen UI. Sizes are computed in the background; returns the exit code.
+// rescan re-reads every provider's metadata; the TUI keeps only the mutated provider's rows.
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
-            std::vector<std::string> errors);
+            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan);

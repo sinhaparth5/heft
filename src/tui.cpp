@@ -9,8 +9,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <print>
 #include <ranges>
 #include <thread>
 
@@ -83,6 +85,21 @@ std::string flags(const PathEntry& e) {
     return f;
 }
 
+// A pending uninstall/purge, shown in the confirmation modal.
+struct Confirm {
+    std::string title, reclaim;
+    std::vector<std::string> argv;
+    std::string_view eco;
+    std::optional<size_t> cache; // caches index for a purge; nullopt = uninstall
+};
+
+std::string join(const std::vector<std::string>& v) {
+    std::string s;
+    for (auto& x : v)
+        s += (s.empty() ? "" : " ") + x;
+    return s;
+}
+
 struct App {
     std::vector<Package> pkgs;
     std::vector<Cache> caches;
@@ -101,6 +118,12 @@ struct App {
     bool filtering = false;
     std::string eco; // "" = all
     bool keys = true;
+
+    std::function<std::vector<Package>()> rescan;
+    std::optional<Confirm> confirm;
+    std::string status; // last command result or refusal, shown for 5 s
+    bool status_ok = false;
+    std::chrono::steady_clock::time_point status_until;
 
     std::atomic<size_t> done{0}; // sizes + usage results computed so far
     size_t total = 0;
@@ -170,6 +193,89 @@ struct App {
 
     void move(int delta) {
         cur[tab] = std::clamp(cur[tab] + delta, 0, std::max(0, int(view().size()) - 1));
+    }
+
+    std::optional<size_t> selected() const {
+        auto v = view();
+        return v.empty() ? std::nullopt
+                         : std::optional{v[std::clamp(cur[tab], 0, int(v.size()) - 1)]};
+    }
+
+    void say(std::string s, bool ok) {
+        status = std::move(s), status_ok = ok;
+        status_until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    }
+
+    // u / p: build the command and open the modal, or say why not.
+    void ask(bool purge) {
+        auto i = selected();
+        if (!i || (purge ? tab != 1 : tab != 0 && tab != 3))
+            return say(purge ? "p purges a cache: switch to Caches (2)"
+                             : "u uninstalls a package: switch to Packages (1) or Stale (4)",
+                       false);
+        // Workers index into pkgs/caches; changing them mid-flight would race.
+        if (done < total)
+            return say("wait for loading to finish", false);
+        if (purge) {
+            auto& c = caches[*i];
+            auto argv = purge_argv(c);
+            if (argv.empty())
+                return say(std::format("{} has no cache-clean command", c.ecosystem), false);
+            confirm =
+                Confirm{"Purge " + std::string{c.ecosystem} + " cache",
+                        c.size ? "~" + human_size(c.size->bytes) : "unknown", argv, c.ecosystem, i};
+            return;
+        }
+        auto& p = pkgs[*i];
+        if (p.essential)
+            return say(p.name + " is Essential: refusing", false);
+        auto argv = uninstall_argv(p);
+        if (argv.empty())
+            return say(std::format("{} has no uninstall command", p.ecosystem), false);
+        confirm =
+            Confirm{"Uninstall " + p.name, p.size ? "~" + human_size(p.size->bytes) : "unknown",
+                    argv, p.ecosystem, std::nullopt};
+    }
+
+    // After the child exits: rescan only the affected provider. Rows that survived keep their
+    // size and usage; new or changed ones are measured here, synchronously.
+    // ponytail: sync fill, fine for the usual 0-few changed rows; re-enqueue to the workers
+    // if a command ever adds many.
+    void refresh(const Confirm& c) {
+        if (c.cache) {
+            caches[*c.cache].size = disk_usage(caches[*c.cache].path.c_str());
+            return;
+        }
+        auto key = [](const Package& p) { return std::tie(p.name, p.version, p.root); };
+        std::vector<Package> next;
+        for (auto& p : pkgs)
+            if (p.ecosystem != c.eco)
+                next.push_back(std::move(p));
+        size_t kept = next.size();
+        for (auto& p : rescan())
+            if (p.ecosystem == c.eco) {
+                auto old = std::ranges::find_if(
+                    pkgs, [&](auto& o) { return o.ecosystem == c.eco && key(o) == key(p); });
+                if (old != pkgs.end())
+                    p.size = old->size, p.usage = old->usage;
+                next.push_back(std::move(p));
+            }
+        pkgs = std::move(next);
+        const char* env = std::getenv("PATH");
+        path = scan_path(env ? env : "", pkgs);
+        std::optional<History> hist;
+        for (size_t i = kept; i < pkgs.size(); ++i) {
+            auto& p = pkgs[i];
+            if (!p.size)
+                p.size = package_size(p);
+            if (!p.usage) {
+                if (!hist) {
+                    const char* h = std::getenv("HOME");
+                    hist = load_history(h ? h : "");
+                }
+                p.usage = bin_usage(package_bins(p, int(i), path), *hist);
+            }
+        }
     }
 
     uint64_t bytes_of(std::string_view e, bool caches_tab) const {
@@ -451,8 +557,9 @@ struct Ui {
 
     Element keys() const {
         std::pair<std::string_view, std::string_view> hints[] = {
-            {"/", "Filter"}, {"s", "Sort"},      {"S", "Reverse"}, {"e", "Ecosystem"},
-            {"1-4", "Tab"},  {"?", "Hide keys"}, {"q", "Quit"}};
+            {"/", "Filter"},    {"s", "Sort"},      {"S", "Reverse"},
+            {"e", "Ecosystem"}, {"u", "Uninstall"}, {"p", "Purge"},
+            {"1-4", "Tab"},     {"?", "Hide keys"}, {"q", "Quit"}};
         Elements e;
         for (auto [k, what] : hints) {
             e.push_back(text(std::format("  {} ", k)) | bold | color(P.accent));
@@ -462,7 +569,9 @@ struct Ui {
     }
 
     Element status_line() const {
-        auto mode = a.filtering ? P.pill(" FILTER ", P.info) : P.pill(" NORMAL ", P.accent);
+        auto mode = a.confirm     ? P.pill(" CONFIRM ", P.danger)
+                    : a.filtering ? P.pill(" FILTER ", P.info)
+                                  : P.pill(" NORMAL ", P.accent);
         std::string crumb;
         if (a.count()) {
             auto v = a.view();
@@ -472,7 +581,10 @@ struct Ui {
             }
         }
         auto filter = a.filtering ? a.filter + "▏" : a.filter.empty() ? "—" : a.filter;
-        return hbox({mode, text(" " + crumb) | color(P.fg), filler(),
+        auto note = text("");
+        if (!a.status.empty() && std::chrono::steady_clock::now() < a.status_until)
+            note = text("  " + a.status) | bold | color(a.status_ok ? P.ok : P.danger);
+        return hbox({mode, text(" " + crumb) | color(P.fg), note, filler(),
                      text(std::format("sort: {} {}   filter: {}   ",
                                       a.sort == 0 && a.tab == 2   ? "lookup"
                                       : a.sort == 0 && a.tab == 3 ? "bloat"
@@ -512,10 +624,51 @@ struct Ui {
         if (a.keys)
             page.push_back(keys());
         page.push_back(status_line());
-        return vbox(std::move(page)) | bgcolor(P.bg) | color(P.fg);
+        auto screen = vbox(std::move(page)) | bgcolor(P.bg) | color(P.fg);
+        if (!a.confirm)
+            return screen;
+        return dbox({screen, modal() | clear_under | center});
+    }
+
+    // design/tui.md "Confirmation modal". Default is Cancel: only y runs.
+    Element modal() const {
+        auto& c = *a.confirm;
+        auto kv = [&](std::string_view k, std::string v) {
+            return hbox(
+                {text(std::format("  {:<11}", k)) | color(P.fg_dim), text(v) | bold, text("  ")});
+        };
+        auto body = vbox(
+            {text(""), kv("Will run:", join(c.argv)), kv("Reclaims:", c.reclaim), text(""),
+             text("  pkgtop will leave the screen while this runs.  ") | color(P.fg_dim), text(""),
+             hbox({filler(), P.pill(" y  Run ", P.danger), text("      "),
+                   P.pill(" n  Cancel ", P.accent), filler()}),
+             text("")});
+        return window(text(" " + c.title + " ") | bold | color(P.danger), body | color(P.fg)) |
+               color(P.danger) | bgcolor(P.bg);
     }
 
     bool on_event(Event e, ScreenInteractive& screen) {
+        if (a.confirm) { // modal: y runs, anything else that's a key cancels
+            if (e == Event::Custom || e.is_mouse())
+                return false;
+            auto c = std::exchange(a.confirm, std::nullopt);
+            if (e != Event::Character('y'))
+                return true;
+            int rc = 0;
+            screen.WithRestoredIO([&] {
+                std::println("$ {}", join(c->argv));
+                std::fflush(stdout);
+                rc = run_foreground(c->argv);
+                std::print("\n{} exit {}. Press Enter to return to pkgtop.", rc ? "✗" : "✓", rc);
+                std::fflush(stdout);
+                for (int ch; (ch = std::getchar()) != '\n' && ch != EOF;) {
+                }
+            })();
+            // Rescan even on failure: a partial uninstall is still a state change.
+            a.refresh(*c);
+            a.say(std::format("{} exit {}: {}", rc ? "✗" : "✓", rc, join(c->argv)), rc == 0);
+            return true;
+        }
         if (a.filtering) {
             if (e == Event::Escape)
                 return a.filter.clear(), a.filtering = false, true;
@@ -557,6 +710,8 @@ struct Ui {
             return a.rev = !a.rev, true;
         if (key('?'))
             return a.keys = !a.keys, true;
+        if (key('u') || key('p'))
+            return a.ask(key('p')), true;
         // ponytail: `e` cycles ecosystems instead of opening the popup from design/tui.md.
         if (key('e')) {
             auto it = std::ranges::find(a.ecos, a.eco);
@@ -573,8 +728,9 @@ struct Ui {
 } // namespace
 
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
-            std::vector<std::string> errors) {
+            std::vector<std::string> errors, std::function<std::vector<Package>()> rescan) {
     App a;
+    a.rescan = std::move(rescan);
     a.pkgs = std::move(pkgs);
     a.caches = std::move(caches);
     a.path = std::move(path);

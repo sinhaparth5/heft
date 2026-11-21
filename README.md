@@ -10,7 +10,7 @@ pkgtop is read-only. It never runs a package manager just to look. When you unin
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build
-./build/pkgtop            # TUI
+./build/pkgtop            # TUI (u uninstalls, p purges a cache, always after a confirm)
 ./build/pkgtop --list --sizes
 ./build/pkgtop --caches
 ./build/pkgtop --path        # every $PATH binary: owner, shadowed/shim/broken flags

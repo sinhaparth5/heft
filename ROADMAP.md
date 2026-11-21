@@ -48,10 +48,11 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [x] Bloat score: size × days since last use (Stale tab, `--stale`)
 - [ ] Later: ecosystem activity (e.g. npm cache hits), last-used column on the Packages tab, libraries via reverse dependencies
 
-## M7: Delegated mutation
-- [ ] Uninstall/purge command per provider
-- [ ] Confirmation modal (exact command + space reclaimed); essential packages blocked
-- [ ] Suspend the TUI, run the child in the foreground, resume, rescan only the affected provider
+## M7: Delegated mutation ✅
+- [x] Uninstall/purge command per provider
+- [x] Confirmation modal (exact command + space reclaimed); essential packages blocked
+- [x] Suspend the TUI, run the child in the foreground, resume, rescan only the affected provider
+- [ ] Later: uninstall from the PATH tab (via the owning package), `brew uninstall --force` for extra Cellar versions, mutation while sizes are still loading (needs per-provider generations)
 
 ## M8: Optional enrichment
 - [ ] Remote "update available" checks (off by default, low priority, never blocks)
