@@ -47,11 +47,21 @@ tar -xzf "$tmp/$asset.tar.gz" -C "$tmp"
 
 default_dir="$HOME/.local/bin"
 [ "$(id -u)" = 0 ] && default_dir=/usr/local/bin
+# Upgrade: replace the copy already on PATH instead of adding a second one.
+old=$(command -v pkgtop 2>/dev/null || true)
+[ -n "$old" ] && [ -w "$(dirname "$old")" ] && default_dir=$(dirname "$old")
 bin_dir="${PKGTOP_BIN_DIR:-$default_dir}"
+was=$("$bin_dir/pkgtop" --version 2>/dev/null || true)
 mkdir -p "$bin_dir"
-install -m 755 "$tmp/$asset/pkgtop" "$bin_dir/pkgtop" ||
+# Copy next to it, then rename: atomic, and a running pkgtop keeps its old file.
+install -m 755 "$tmp/$asset/pkgtop" "$bin_dir/.pkgtop.new" && mv -f "$bin_dir/.pkgtop.new" "$bin_dir/pkgtop" ||
     die "can't write to $bin_dir (try PKGTOP_BIN_DIR=... or sudo)"
-echo "Installed $("$bin_dir/pkgtop" --version) to $bin_dir/pkgtop"
+now=$("$bin_dir/pkgtop" --version)
+if [ -n "$was" ] && [ "$was" != "$now" ]; then
+    echo "Updated $was -> $now in $bin_dir/pkgtop"
+else
+    echo "Installed $now to $bin_dir/pkgtop"
+fi
 case ":$PATH:" in
 *":$bin_dir:"*) ;;
 *) echo "Note: $bin_dir is not on your PATH. Add it, e.g.: export PATH=\"$bin_dir:\$PATH\"" ;;

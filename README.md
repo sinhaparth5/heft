@@ -14,7 +14,7 @@ Linux (x86_64 or aarch64, any distro; a single static binary):
 curl -fsSL https://raw.githubusercontent.com/sinhaparth5/pkgtop/main/install.sh | sh
 ```
 
-It installs to `~/.local/bin` (`/usr/local/bin` as root) after checking the sha256. Pick another place with `PKGTOP_BIN_DIR=/usr/local/bin`, or a specific release with `PKGTOP_VERSION=v2026.11.1`. You can also download the tarball from [Releases](https://github.com/sinhaparth5/pkgtop/releases) yourself.
+It installs to `~/.local/bin` (`/usr/local/bin` as root) after checking the sha256. Run the same command again to upgrade. Pick another place with `PKGTOP_BIN_DIR=/usr/local/bin`, or a specific release with `PKGTOP_VERSION=v2026.11.1`. You can also download the tarball from [Releases](https://github.com/sinhaparth5/pkgtop/releases) yourself.
 
 - **Windows:** not supported natively. Run the same command inside WSL.
 - **macOS:** not yet ([#1](https://github.com/sinhaparth5/pkgtop/issues/1)). Until then, build from source below.
