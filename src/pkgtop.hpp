@@ -65,3 +65,6 @@ ScanResult scan_dpkg(const char* path = "/var/lib/dpkg/status");
 // cargo: $CARGO_HOME/.crates.toml (cargo writes it alongside .crates2.json; one line per install).
 std::vector<Package> parse_crates_toml(std::string_view text, std::string_view cargo_home);
 ScanResult scan_cargo(const std::string& cargo_home);
+
+// tui.cpp: full-screen UI. Sizes are computed in the background; returns the exit code.
+int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<std::string> errors);

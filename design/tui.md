@@ -82,10 +82,10 @@ Vim-style keys, with arrow keys always working too.
 | Key | Action |
 |---|---|
 | `j/k`, `↑/↓`, `g/G`, `PgUp/PgDn` | Move |
-| `1`–`4`, `Tab` | Switch tab / cycle pane focus |
+| `1`–`4`, `Tab` | Switch tab (`Tab` cycles tabs until there is a second focusable pane) |
 | `/` | FILTER mode: fuzzy-match name, live. `Esc` clears, `Enter` keeps |
 | `s` / `S` | Cycle sort column / reverse |
-| `e` | Ecosystem filter popup |
+| `e` | Cycle the ecosystem filter (a popup is planned) |
 | `Enter` | Expand row (bins, all paths, history hits) |
 | `u` / `p` | Uninstall package / purge cache → confirmation modal |
 | `r` | Rescan the selected provider |
@@ -95,7 +95,7 @@ Vim-style keys, with arrow keys always working too.
 Mouse: click selects a row, wheel scrolls, click on a header sorts. Mouse is optional and every action has a key.
 
 ## States
-- **Loading sizes:** the SIZE cell shows `fg-dim` `···` until hydrated. The row never jumps, because column widths are fixed up front. The sort-by-size order is re-applied at most every 250 ms, and the selected row stays put.
+- **Loading sizes:** the SIZE cell shows `fg-dim` `···` until hydrated. Column widths are fixed up front, so nothing shifts sideways. The cursor is a row position (like htop): rows may reorder under it as sizes arrive, but the cursor never jumps.
 - **Empty provider:** `No cargo packages found in ~/.cargo` + the path that was checked.
 - **Errors:** a provider that failed to parse shows `✗` in Ecosystems. Its Details pane explains why. Other providers are unaffected.
 - **Skipped entries:** `SIZE` shows `5.2M+` when entries were skipped for permissions, and Details says `3 entries skipped (permission denied)`.

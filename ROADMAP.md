@@ -20,11 +20,13 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [x] Check against `du -s --block-size=1` on fixtures with hardlinks and sparse files
 
 ## M3: TUI
-- [ ] Layout per `design/tui.md`: top bar + tabs, Ecosystems / Packages / Details panes, keys panel, status line
-- [ ] Palette tokens with truecolor → 256 fallback, `NO_COLOR`, `--ascii`
-- [ ] FTXUI table: sort by size/name/ecosystem, fuzzy filter, detail pane
-- [ ] Responsive collapse at <120 / <100 / <80 cols
-- [ ] Render the inventory immediately; worker pool streams sizes in; UI redraws without blocking input
+- [x] Layout per `design/tui.md`: top bar + tabs, Ecosystems / Packages / Details panes, keys panel, status line
+- [x] Palette tokens with truecolor → 256 fallback, `NO_COLOR`
+- [ ] `--ascii` borders and glyphs (FTXUI has no ASCII border style; needs a custom border)
+- [x] FTXUI table: sort by size/name/ecosystem, fuzzy filter, detail pane
+- [x] Responsive collapse at <120 / <100 / <80 cols
+- [x] Render the inventory immediately; worker pool streams sizes in; UI redraws without blocking input
+- [ ] Later polish: mouse, `e` popup (currently cycles), pane focus on `Tab`, visible-rows-first size priority
 
 ## M4: More providers
 - [ ] pacman (`/var/lib/pacman/local/*/desc`)

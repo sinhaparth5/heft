@@ -10,8 +10,12 @@ pkgtop is read-only. It never runs a package manager just to look. When you unin
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build
-./build/pkgtop --version
+./build/pkgtop            # TUI
+./build/pkgtop --list --sizes
+./build/pkgtop --caches
 ```
+
+The TUI's dependency, [FTXUI](https://github.com/ArthurSonzogni/FTXUI), is fetched by CMake on first configure.
 
 Requires a C++23 compiler (GCC 14+ / Clang 18+) and CMake 3.28+.
 

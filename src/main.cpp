@@ -5,10 +5,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
-#include <pwd.h>
-#include <unistd.h>
 #include <print>
+#include <pwd.h>
 #include <string_view>
+#include <unistd.h>
 
 namespace {
 
@@ -31,24 +31,31 @@ double ms_since(Clock::time_point t0) {
 }
 
 // "1.5M", or "1.5M+" when some entries were unreadable (size is a lower bound).
-std::string size_cell(const DiskUsage& u) {
-    return human_size(u.bytes) + (u.skipped ? "+" : "");
+std::string size_cell(const DiskUsage& u) { return human_size(u.bytes) + (u.skipped ? "+" : ""); }
+
+struct Inventory {
+    std::vector<Package> pkgs;
+    std::vector<std::string> errors; // "eco: reason", one per failed provider
+};
+
+Inventory scan_all() {
+    Inventory inv;
+    auto add = [&](std::string_view eco, ScanResult r) {
+        if (r)
+            std::ranges::move(*r, std::back_inserter(inv.pkgs));
+        else
+            inv.errors.push_back(std::format("{}: {}", eco, r.error()));
+    };
+    add("apt", scan_dpkg());
+    add("cargo", scan_cargo(env_or("CARGO_HOME", home() + "/.cargo")));
+    return inv;
 }
 
 int list(bool sizes) {
     auto t0 = std::chrono::steady_clock::now();
-    std::vector<Package> all;
-    int errors = 0;
-
-    auto add = [&](std::string_view eco, ScanResult r) {
-        if (r)
-            std::ranges::move(*r, std::back_inserter(all));
-        else
-            std::println(stderr, "{}: {}", eco, r.error()), ++errors;
-    };
-    add("apt", scan_dpkg());
-    add("cargo", scan_cargo(env_or("CARGO_HOME", home() + "/.cargo")));
-
+    auto [all, errs] = scan_all();
+    for (auto& e : errs)
+        std::println(stderr, "{}", e);
     auto ms = ms_since(t0);
 
     double size_ms = 0;
@@ -83,7 +90,7 @@ int list(bool sizes) {
     std::println(stderr, "{} packages in {:.2f} ms", all.size(), ms);
     if (sizes)
         std::println(stderr, "sized in {:.0f} ms", size_ms);
-    return errors ? 1 : 0;
+    return errs.empty() ? 0 : 1;
 }
 
 int caches() {
@@ -119,6 +126,10 @@ int main(int argc, char** argv) {
         return list(arg2 == "--sizes");
     if (arg == "--caches")
         return caches();
-    std::println(stderr, "usage: pkgtop --list [--sizes] | --caches | --version   (TUI in M3)");
+    if (arg.empty() && ::isatty(STDIN_FILENO) && ::isatty(STDOUT_FILENO)) {
+        auto inv = scan_all();
+        return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(inv.errors));
+    }
+    std::println(stderr, "usage: pkgtop [--list [--sizes] | --caches | --version]");
     return 2;
 }

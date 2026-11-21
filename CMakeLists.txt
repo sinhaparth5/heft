@@ -11,13 +11,22 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
+# TUI dependency. Fetched before our warning flags so they don't apply to it.
+include(FetchContent)
+set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(ftxui
+  GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
+  GIT_TAG v6.1.9
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(ftxui)
+
 add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_library(pkgtop_core STATIC src/file.cpp src/dpkg.cpp src/cargo.cpp src/size.cpp src/caches.cpp)
 target_include_directories(pkgtop_core PUBLIC src)
 
-add_executable(pkgtop src/main.cpp)
-target_link_libraries(pkgtop PRIVATE pkgtop_core)
+add_executable(pkgtop src/main.cpp src/tui.cpp)
+target_link_libraries(pkgtop PRIVATE pkgtop_core ftxui::component)
 target_compile_definitions(pkgtop PRIVATE PKGTOP_VERSION="${PROJECT_VERSION}")
 
 enable_testing()
