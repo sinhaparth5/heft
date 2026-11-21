@@ -7,17 +7,17 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [x] CalVer, CHANGELOG, LICENSE (MIT), README
 - [x] TUI design spec + architecture doc (`design/`)
 
-## M1: Headless inventory (`pkgtop --list`)
-- [ ] `Package { ecosystem, name, version, root, bins }` and `Cache { ecosystem, path }`
+## M1: Headless inventory (`pkgtop --list`) ✅
+- [x] `Package { ecosystem, name, version, root, bins }` and `Cache { ecosystem, path }`
 - [x] dpkg provider: mmap `/var/lib/dpkg/status`, parse stanzas, honor `Essential: yes`
 - [x] cargo provider: `~/.cargo/.crates.toml` (same data as `.crates2.json`, one line per install)
 - [x] Plain table output to stdout, with a startup-time measurement (target < 50 ms)
 - [x] Fixture-based parser tests
 
-## M2: Physical disk accounting
-- [ ] `openat`/`getdents64`/`fstatat` walker: `st_blocks`, inode dedupe, no symlink follow, no `st_dev` crossing, skipped-entry counter
-- [ ] Sizes for packages and caches (`~/.cargo/registry`, `~/.cache/pip`, `~/.cache/uv`, `~/.npm`, pnpm store, apt archives)
-- [ ] Check against `du -s --block-size=1` on fixtures with hardlinks and sparse files
+## M2: Physical disk accounting ✅
+- [x] `openat`/`getdents64`/`fstatat` walker: `st_blocks`, inode dedupe, no symlink follow, no `st_dev` crossing, skipped-entry counter
+- [x] Sizes for packages and caches (`~/.cargo/registry`, `~/.cache/pip`, `~/.cache/uv`, `~/.npm`, pnpm store, apt archives)
+- [x] Check against `du -s --block-size=1` on fixtures with hardlinks and sparse files
 
 ## M3: TUI
 - [ ] Layout per `design/tui.md`: top bar + tabs, Ecosystems / Packages / Details panes, keys panel, status line

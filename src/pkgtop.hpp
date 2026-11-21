@@ -1,10 +1,26 @@
 #pragma once
 
+#include <cstdint>
 #include <expected>
+#include <format>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+// Physical disk usage: allocated blocks (st_blocks * 512), hardlinks counted once,
+// symlinks never followed, mount points never crossed.
+struct DiskUsage {
+    uint64_t bytes = 0;
+    uint64_t files = 0;
+    uint64_t skipped = 0; // entries we could not read (EACCES/EPERM); size is a lower bound
+};
+DiskUsage disk_usage(const char* path);                    // file or whole directory tree
+DiskUsage files_usage(std::span<const std::string> paths); // explicit file list; dirs ignored
+std::string human_size(uint64_t bytes);                    // 1536 -> "1.5K"
 
 struct Package {
     std::string_view ecosystem; // static literal, e.g. "apt"
@@ -13,14 +29,29 @@ struct Package {
     std::string root;              // install root; empty when files are scattered (apt)
     std::vector<std::string> bins; // exposed executables
     bool essential = false;        // never offer uninstall
+    std::string arch;              // apt only: locates name:arch.list for Multi-Arch packages
+    std::optional<DiskUsage> size; // filled in later, never during scan
 };
+
+struct Cache {
+    std::string_view ecosystem;
+    std::string path;
+    std::optional<DiskUsage> size;
+};
+
+// Known cache stores that exist on this machine. home = $HOME.
+std::vector<Cache> find_caches(const std::string& home);
+
+// Per-ecosystem package size.
+DiskUsage dpkg_package_size(const Package& p, const char* info_dir = "/var/lib/dpkg/info");
+DiskUsage cargo_package_size(const Package& p);
 
 // Read-only mmap of a whole file. Missing or empty file = empty text, not an error.
 struct MappedFile {
     std::string_view text;
     MappedFile() = default;
     MappedFile(MappedFile&& o) noexcept : text(std::exchange(o.text, {})) {}
-    MappedFile& operator=(MappedFile&&) = delete;
+    MappedFile& operator=(MappedFile&& o) noexcept { return std::swap(text, o.text), *this; }
     ~MappedFile();
 };
 std::expected<MappedFile, std::string> map_file(const char* path);

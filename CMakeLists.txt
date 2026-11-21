@@ -13,7 +13,7 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-add_library(pkgtop_core STATIC src/file.cpp src/dpkg.cpp src/cargo.cpp)
+add_library(pkgtop_core STATIC src/file.cpp src/dpkg.cpp src/cargo.cpp src/size.cpp src/caches.cpp)
 target_include_directories(pkgtop_core PUBLIC src)
 
 add_executable(pkgtop src/main.cpp)
@@ -21,7 +21,7 @@ target_link_libraries(pkgtop PRIVATE pkgtop_core)
 target_compile_definitions(pkgtop PRIVATE PKGTOP_VERSION="${PROJECT_VERSION}")
 
 enable_testing()
-foreach(t dpkg cargo)
+foreach(t dpkg cargo size)
   add_executable(test_${t} tests/test_${t}.cpp)
   target_link_libraries(test_${t} PRIVATE pkgtop_core)
   # Tests use assert(); keep it on in every build type.

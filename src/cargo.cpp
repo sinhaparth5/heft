@@ -57,3 +57,10 @@ ScanResult scan_cargo(const std::string& cargo_home) {
         return std::unexpected(f.error());
     return parse_crates_toml(f->text, cargo_home);
 }
+
+DiskUsage cargo_package_size(const Package& p) {
+    std::vector<std::string> paths;
+    for (auto& b : p.bins)
+        paths.push_back(p.root + "/" + b);
+    return files_usage(paths);
+}
