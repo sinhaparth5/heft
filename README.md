@@ -17,6 +17,8 @@ cmake -S . -B build -G Ninja && cmake --build build
 
 The TUI's dependency, [FTXUI](https://github.com/ArthurSonzogni/FTXUI), is fetched by CMake on first configure.
 
+Reads apt, pacman, Homebrew, cargo, Go, uv tools, pipx, npm and pnpm straight from disk.
+
 Requires a C++23 compiler (GCC 14+ / Clang 18+) and CMake 3.28+.
 
 ## Docs

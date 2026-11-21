@@ -1,0 +1,3 @@
+[tool]
+requirements = [{ name = "pre-commit" }]
+entrypoints = [{ name = "pre-commit", install-path = "/home/u/.local/bin/pre-commit" }, { name = "pre-commit-hook", install-path = "/home/u/.local/bin/pre-commit-hook" }]

@@ -29,11 +29,11 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [ ] Later polish: mouse, `e` popup (currently cycles), pane focus on `Tab`, visible-rows-first size priority
 
 ## M4: More providers
-- [ ] pacman (`/var/lib/pacman/local/*/desc`)
-- [ ] Homebrew (Cellar `INSTALL_RECEIPT.json`)
-- [ ] uv tools (`uv-receipt.toml`), pipx
-- [ ] npm/pnpm globals (`package.json` under the global prefix)
-- [ ] Go (`.go.buildinfo` section in `~/go/bin/*`)
+- [x] pacman (`/var/lib/pacman/local/*/desc`, sizes from `files`)
+- [x] Homebrew (Cellar `INSTALL_RECEIPT.json`, one row per installed version)
+- [x] uv tools (`uv-receipt.toml` + `dist-info` version), pipx (`pipx_metadata.json`)
+- [x] npm/pnpm globals (`package.json` under every prefix: env, `~/.npmrc`, nvm, `/usr/local`; pnpm `global/`)
+- [x] Go (`.go.buildinfo` section in `$GOBIN`/`~/go/bin/*`, Go 1.18+)
 - [ ] rpm (later: the db is SQLite, so this needs a dependency or a minimal reader)
 
 ## M5: `$PATH` graph

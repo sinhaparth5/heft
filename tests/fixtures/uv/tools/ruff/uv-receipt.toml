@@ -1,0 +1,8 @@
+[tool]
+requirements = [{ name = "ruff" }]
+entrypoints = [
+    { name = "ruff", install-path = "/home/u/.local/bin/ruff", from = "ruff" },
+]
+
+[tool.options]
+exclude-newer = "2024-10-01T00:00:00Z"

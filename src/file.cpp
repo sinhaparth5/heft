@@ -1,7 +1,9 @@
 #include "pkgtop.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -20,7 +22,7 @@ std::expected<MappedFile, std::string> map_file(const char* path) {
     if (fd < 0)
         return errno == ENOENT ? std::expected<MappedFile, std::string>{} : fail("", errno);
 
-    struct stat st {};
+    struct stat st{};
     if (::fstat(fd, &st) < 0) {
         int e = errno;
         ::close(fd);
@@ -39,5 +41,27 @@ std::expected<MappedFile, std::string> map_file(const char* path) {
 
     std::expected<MappedFile, std::string> out{std::in_place};
     out->text = {static_cast<const char*>(p), static_cast<size_t>(st.st_size)};
+    return out;
+}
+
+std::vector<std::string> list_dir(const std::string& dir, bool symlinks) {
+    std::vector<std::string> out;
+    DIR* d = ::opendir(dir.c_str());
+    if (!d)
+        return out;
+    while (dirent* e = ::readdir(d)) {
+        if (e->d_name[0] == '.')
+            continue;
+        bool link = e->d_type == DT_LNK;
+        if (e->d_type == DT_UNKNOWN) { // some filesystems don't fill d_type
+            struct stat st;
+            link = ::fstatat(::dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+                   S_ISLNK(st.st_mode);
+        }
+        if (symlinks || !link)
+            out.emplace_back(e->d_name);
+    }
+    ::closedir(d);
+    std::ranges::sort(out);
     return out;
 }

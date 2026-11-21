@@ -1,0 +1,13 @@
+{
+    "injected_packages": {},
+    "main_package": {
+        "app_paths": [{"__Path__": "/x/bin/greynoise", "__type__": "Path"}],
+        "apps": ["greynoise"],
+        "apps_of_dependencies": ["normalizer", "idna"],
+        "package": "greynoise",
+        "package_version": "3.1.0",
+        "suffix": ""
+    },
+    "pipx_metadata_version": "0.5",
+    "python_version": "Python 3.14.4"
+}

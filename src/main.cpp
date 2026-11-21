@@ -46,8 +46,53 @@ Inventory scan_all() {
         else
             inv.errors.push_back(std::format("{}: {}", eco, r.error()));
     };
+    auto h = home();
+    auto data = env_or("XDG_DATA_HOME", h + "/.local/share");
+    auto gopath = env_or("GOPATH", h + "/go");
+
     add("apt", scan_dpkg());
-    add("cargo", scan_cargo(env_or("CARGO_HOME", home() + "/.cargo")));
+    add("pacman", scan_pacman("/var/lib/pacman/local"));
+    add("cargo", scan_cargo(env_or("CARGO_HOME", h + "/.cargo")));
+    add("go", scan_go(env_or("GOBIN", gopath.substr(0, gopath.find(':')) + "/bin")));
+    add("uv", scan_uv_tools(env_or("UV_TOOL_DIR", data + "/uv/tools")));
+    if (const char* p = std::getenv("PIPX_HOME"); p && *p)
+        add("pipx", scan_pipx(std::string{p} + "/venvs"));
+    else // pipx moved its default home in 1.3
+        for (auto& dir : {data + "/pipx/venvs", h + "/.local/pipx/venvs"})
+            add("pipx", scan_pipx(dir));
+    add("pnpm", scan_pnpm(env_or("PNPM_HOME", data + "/pnpm") + "/global"));
+
+    // Homebrew: the first prefix that has a Cellar.
+    for (auto& prefix : {env_or("HOMEBREW_PREFIX", "/home/linuxbrew/.linuxbrew"), h + "/.linuxbrew",
+                         std::string{"/opt/homebrew"}, std::string{"/usr/local"}})
+        if (!list_dir(prefix + "/Cellar").empty()) {
+            add("brew", scan_brew(prefix));
+            break;
+        }
+
+    // npm globals live under the prefix: $NPM_CONFIG_PREFIX, ~/.npmrc prefix=, every nvm
+    // node, or /usr/local. ponytail: doesn't read /etc/npmrc or project-level .npmrc.
+    std::vector<std::string> prefixes;
+    if (const char* p = std::getenv("NPM_CONFIG_PREFIX"); p && *p)
+        prefixes.emplace_back(p);
+    if (auto rc = map_file((h + "/.npmrc").c_str()); rc)
+        for (auto t = rc->text; !t.empty();) {
+            auto nl = t.find('\n');
+            auto line = t.substr(0, nl);
+            t = nl == t.npos ? std::string_view{} : t.substr(nl + 1);
+            if (line.starts_with("prefix=")) {
+                auto v = std::string{line.substr(7)};
+                prefixes.push_back(v.starts_with("~/") ? h + v.substr(1) : v);
+            }
+        }
+    auto nvm = env_or("NVM_DIR", h + "/.nvm") + "/versions/node";
+    for (auto& v : list_dir(nvm))
+        prefixes.push_back(nvm + "/" + v);
+    prefixes.emplace_back("/usr/local");
+    std::ranges::sort(prefixes);
+    prefixes.erase(std::ranges::unique(prefixes).begin(), prefixes.end());
+    for (auto& p : prefixes)
+        add("npm", scan_npm(p + "/lib/node_modules"));
     return inv;
 }
 
@@ -62,7 +107,7 @@ int list(bool sizes) {
     if (sizes) {
         auto t1 = Clock::now();
         for (auto& p : all)
-            p.size = p.ecosystem == "apt" ? dpkg_package_size(p) : cargo_package_size(p);
+            p.size = package_size(p);
         size_ms = ms_since(t1);
         std::ranges::stable_sort(all, std::greater{}, [](auto& p) { return p.size->bytes; });
     }

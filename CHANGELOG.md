@@ -6,6 +6,7 @@ Versioning: [CalVer](https://calver.org/) `YYYY.MM.PATCH`. PATCH starts at 0 eac
 
 ## [Unreleased]
 ### Added
+- Providers: pacman, Homebrew, uv tools, pipx, npm globals (including every nvm node), pnpm globals, and Go binaries (module version read from the `.go.buildinfo` ELF section). All read from disk; none run the tool.
 - Interactive TUI (run `pkgtop` with no arguments): Packages and Caches tabs, Ecosystems pane with disk bars, Details pane, keys panel and status line in the gruvbox palette. Sizes stream in from background workers while the UI stays responsive. `j/k`, `g/G`, PgUp/PgDn, `/` fuzzy filter, `s`/`S` sort, `e` ecosystem filter, `1`–`4`/`Tab` tabs, `?` keys panel, `q` quit. Honors `NO_COLOR`; falls back to 256 colours without truecolor; collapses panes below 120 and 100 columns.
 - `pkgtop --list`: headless inventory of installed apt packages, read directly from `/var/lib/dpkg/status` (no subprocess), with Essential flag and scan time.
 - cargo provider: packages from `$CARGO_HOME/.crates.toml` (default `~/.cargo`) with their binaries; `--list` gains a BINS column.

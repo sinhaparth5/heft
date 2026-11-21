@@ -45,9 +45,9 @@ struct Palette {
     }
     Color eco(std::string_view e) const {
         static constexpr std::pair<std::string_view, uint32_t> tags[] = {
-            {"apt", 0xfb4934},   {"pacman", 0x83a598}, {"brew", 0xfabd2f},
-            {"cargo", 0xfe8019}, {"go", 0x8ec07c},     {"uv", 0xd3869b},
-            {"pip", 0xd3869b},   {"npm", 0xb8bb26},    {"pnpm", 0xb8bb26}};
+            {"apt", 0xfb4934}, {"pacman", 0x83a598}, {"brew", 0xfabd2f}, {"cargo", 0xfe8019},
+            {"go", 0x8ec07c},  {"uv", 0xd3869b},     {"pip", 0xd3869b},  {"pipx", 0xd3869b},
+            {"npm", 0xb8bb26}, {"pnpm", 0xb8bb26}};
         for (auto [k, v] : tags)
             if (k == e)
                 return hex(v);
@@ -314,7 +314,8 @@ struct Ui {
             return kv;
         }
         auto& p = a.pkgs[i];
-        kv.emplace_back(p.name + " " + p.version, std::string{p.ecosystem});
+        kv.emplace_back(p.name, std::string{p.ecosystem});
+        kv.emplace_back("Version", p.version);
         kv.emplace_back("Root", p.root.empty() ? "/ (dpkg)" : tilde(p.root));
         if (!p.arch.empty())
             kv.emplace_back("Arch", p.arch);
@@ -512,7 +513,7 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<st
         for (size_t i; !st.stop_requested() && (i = next++) < a.total; ++a.done) {
             if (i < a.pkgs.size()) {
                 auto& p = a.pkgs[i];
-                auto u = p.ecosystem == "apt" ? dpkg_package_size(p) : cargo_package_size(p);
+                auto u = package_size(p);
                 screen.Post([&a, i, u] { a.pkgs[i].size = u; });
             } else {
                 size_t c = i - a.pkgs.size();

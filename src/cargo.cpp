@@ -7,7 +7,8 @@ std::string_view next_string(std::string_view s, size_t& pos) {
     auto a = s.find('"', pos);
     if (a == s.npos)
         return pos = s.npos, std::string_view{};
-    auto b = s.find('"', a + 1); // crate names, versions, sources and bin names never contain quotes
+    auto b =
+        s.find('"', a + 1); // crate names, versions, sources and bin names never contain quotes
     if (b == s.npos)
         return pos = s.npos, std::string_view{};
     pos = b + 1;
@@ -56,11 +57,4 @@ ScanResult scan_cargo(const std::string& cargo_home) {
     if (!f)
         return std::unexpected(f.error());
     return parse_crates_toml(f->text, cargo_home);
-}
-
-DiskUsage cargo_package_size(const Package& p) {
-    std::vector<std::string> paths;
-    for (auto& b : p.bins)
-        paths.push_back(p.root + "/" + b);
-    return files_usage(paths);
 }

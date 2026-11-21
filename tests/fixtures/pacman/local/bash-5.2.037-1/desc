@@ -1,0 +1,19 @@
+%NAME%
+bash
+
+%VERSION%
+5.2.037-1
+
+%BASE%
+bash
+
+%DESC%
+The GNU Bourne Again shell
+
+%ARCH%
+x86_64
+
+%DEPENDS%
+glibc
+readline
+

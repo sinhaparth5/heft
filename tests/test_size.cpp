@@ -44,8 +44,8 @@ int main() {
     fs::create_directories(root / "sub/deeper");
     write_file(root / "sub/deeper/small", 100);
     fs::create_hard_link(root / "big", root / "sub/big.again"); // hardlink in another dir
-    fs::create_symlink("big", root / "link");                    // short: no blocks, never followed
-    fs::create_symlink("..", root / "sub/loop");                 // cycle: must not recurse
+    fs::create_symlink("big", root / "link");                   // short: no blocks, never followed
+    fs::create_symlink("..", root / "sub/loop");                // cycle: must not recurse
 
     int fd = ::open((root / "sparse").c_str(), O_WRONLY | O_CREAT, 0644);
     assert(::ftruncate(fd, 100 << 20) == 0); // 100 MiB logical, ~0 physical
@@ -71,13 +71,13 @@ int main() {
 
     // files_usage: manifest semantics (dpkg .list): dirs ignored, hardlinks once, missing ok.
     std::vector<std::string> list = {root.string(), (root / "big").string(),
-                                     (root / "big.hardlink").string(),
-                                     (root / "gone").string()};
+                                     (root / "big.hardlink").string(), (root / "gone").string()};
     auto f = files_usage(list);
     assert(f.files == 1 && f.skipped == 0 && f.bytes >= (1 << 20));
 
     assert(disk_usage("/nonexistent/path").bytes == 0);
-    assert(human_size(512) == "512B" && human_size(1536) == "1.5K" && human_size(3ull << 30) == "3.0G");
+    assert(human_size(512) == "512B" && human_size(1536) == "1.5K" &&
+           human_size(3ull << 30) == "3.0G");
 
     fs::remove_all(root);
     std::println("test_size: ok");

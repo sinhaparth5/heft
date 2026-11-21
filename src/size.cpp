@@ -112,3 +112,20 @@ std::string human_size(uint64_t bytes) {
         v /= 1024, ++u;
     return u == 0 ? std::format("{}B", bytes) : std::format("{:.1f}{}", v, units[u]);
 }
+
+DiskUsage bins_usage(const Package& p) {
+    std::vector<std::string> paths;
+    for (auto& b : p.bins)
+        paths.push_back(p.root + "/" + b);
+    return files_usage(paths);
+}
+
+DiskUsage package_size(const Package& p) {
+    if (p.ecosystem == "apt")
+        return dpkg_package_size(p);
+    if (p.ecosystem == "pacman")
+        return pacman_package_size(p);
+    if (p.ecosystem == "cargo" || p.ecosystem == "go")
+        return bins_usage(p);
+    return disk_usage(p.root.c_str());
+}

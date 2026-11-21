@@ -1,0 +1,8 @@
+%FILES%
+usr/
+usr/bin/
+usr/bin/bash
+usr/bin/sh
+
+%BACKUP%
+etc/bash.bashrc	abc
