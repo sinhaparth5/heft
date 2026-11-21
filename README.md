@@ -4,7 +4,7 @@
 
 pkgtop is read-only. It never runs a package manager just to look. When you uninstall something, it hands over to that ecosystem's own command.
 
-> Status: early. See [ROADMAP.md](ROADMAP.md).
+> Status: early. Planned work is in [issues](https://github.com/sinhaparth5/pkgtop/issues).
 
 ## Install
 
@@ -14,10 +14,10 @@ Linux (x86_64 or aarch64, any distro; a single static binary):
 curl -fsSL https://raw.githubusercontent.com/sinhaparth5/pkgtop/main/install.sh | sh
 ```
 
-It installs to `~/.local/bin` after checking the sha256. Pick another place with `PKGTOP_BIN_DIR=/usr/local/bin`, or a specific release with `PKGTOP_VERSION=v2026.11.1`. You can also download the tarball from [Releases](https://github.com/sinhaparth5/pkgtop/releases) yourself.
+It installs to `~/.local/bin` (`/usr/local/bin` as root) after checking the sha256. Pick another place with `PKGTOP_BIN_DIR=/usr/local/bin`, or a specific release with `PKGTOP_VERSION=v2026.11.1`. You can also download the tarball from [Releases](https://github.com/sinhaparth5/pkgtop/releases) yourself.
 
 - **Windows:** not supported natively. Run the same command inside WSL.
-- **macOS:** not yet (on the roadmap). Until then, build from source below.
+- **macOS:** not yet ([#1](https://github.com/sinhaparth5/pkgtop/issues/1)). Until then, build from source below.
 
 ## Build
 
@@ -32,19 +32,13 @@ cmake -S . -B build -G Ninja && cmake --build build
 ./build/pkgtop --updates     # TUI with the same checks in the background
 ```
 
-Releasing: bump `project(VERSION)` in `CMakeLists.txt`, move `[Unreleased]` in `CHANGELOG.md` to a `[YYYY.MM.PATCH] - date` section, commit, then `git tag vYYYY.MM.PATCH && git push origin vYYYY.MM.PATCH`. The release workflow checks that tag, version and changelog agree, builds both architectures (`scripts/build-static.sh`, runnable locally with Docker) and publishes.
+Releasing: add lines under `[Unreleased]` in `CHANGELOG.md`, commit, then `make tag VERSION=YYYY.MM.PATCH`. It bumps the version, turns `[Unreleased]` into the release notes, tags `vYYYY.MM.PATCH` and pushes; CI builds and publishes the release.
 
 The TUI's dependency, [FTXUI](https://github.com/ArthurSonzogni/FTXUI), is fetched by CMake on first configure.
 
 Reads apt, pacman, Homebrew, cargo, Go, uv tools, pipx, npm and pnpm straight from disk.
 
 Requires a C++23 compiler (GCC 14+ / Clang 18+) and CMake 3.28+.
-
-## Docs
-
-- [design/tui.md](design/tui.md): what the interface looks like and how it behaves
-- [design/architecture.md](design/architecture.md): how it's built
-- [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

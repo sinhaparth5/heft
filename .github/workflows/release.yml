@@ -1,5 +1,4 @@
-# Push a tag vYYYY.MM.PATCH (matching project(VERSION) in CMakeLists.txt) to publish a
-# release with static Linux binaries for x86_64 and aarch64.
+# Pushed by `make tag VERSION=YYYY.MM.PATCH`.
 name: release
 
 on:

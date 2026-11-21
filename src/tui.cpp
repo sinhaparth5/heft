@@ -31,7 +31,7 @@ std::string tilde(std::string_view p) {
     return std::string{p};
 }
 
-// Palette tokens from design/tui.md. This is the only place raw hex appears.
+// Palette tokens. This is the only place raw hex appears.
 // FTXUI downsamples RGB to the 256-colour palette when COLORTERM isn't truecolor.
 struct Palette {
     bool on = true;
@@ -76,7 +76,7 @@ struct Row {
     const PathEntry* bin = nullptr;       // PATH tab only
 };
 
-// PATH flags from design/tui.md: ⚠ shadowed, ↯ shim, ✗ broken.
+// PATH flags: ⚠ shadowed, ↯ shim, ✗ broken.
 std::string flags(const PathEntry& e) {
     std::string f;
     for (auto [on, g] : {std::pair{e.shadowed, "⚠"}, {e.shim, "↯"}, {e.dangling, "✗"}})
@@ -181,7 +181,7 @@ struct App {
             return std::tie(a.eco, a.name) < std::tie(b.eco, b.name);
         };
         // ponytail: re-sorts every frame, so rows reorder while sizes stream in; throttle
-        // to 250 ms (design/tui.md) if that turns out to be distracting.
+        // to 250 ms if that turns out to be distracting.
         std::ranges::stable_sort(v,
                                  [&](size_t x, size_t y) { return rev ? less(y, x) : less(x, y); });
         return v;
@@ -404,7 +404,7 @@ struct Ui {
         bool caches = a.tab == 1, bins = a.tab == 2, stale = a.tab == 3;
         int second_w = caches ? 9 : bins ? std::clamp(width / 3, 16, 40) : 16;
         int name_w = width - (1 + 1 + second_w + 1 + 6 + 1 + 7 + 1);
-        if (name_w < 16) // narrow: VERSION goes first (design/tui.md column order)
+        if (name_w < 16) // narrow: VERSION goes first
             name_w += second_w + 1, second_w = 0;
 
         auto cols = [&](std::string_view name, std::string_view second, std::string_view eco,
@@ -634,7 +634,7 @@ struct Ui {
         return dbox({screen, modal() | clear_under | center});
     }
 
-    // design/tui.md "Confirmation modal". Default is Cancel: only y runs.
+    // Default is Cancel: only y runs.
     Element modal() const {
         auto& c = *a.confirm;
         auto kv = [&](std::string_view k, std::string v) {
@@ -716,7 +716,7 @@ struct Ui {
             return a.keys = !a.keys, true;
         if (key('u') || key('p'))
             return a.ask(key('p')), true;
-        // ponytail: `e` cycles ecosystems instead of opening the popup from design/tui.md.
+        // ponytail: `e` cycles ecosystems instead of opening the popup.
         if (key('e')) {
             auto it = std::ranges::find(a.ecos, a.eco);
             a.eco = a.eco.empty() ? std::string{a.ecos.empty() ? "" : a.ecos[0]}
@@ -768,7 +768,7 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     // Size workers. Results go back through screen.Post so the UI thread stays the only
     // writer of App. Workers only read name/arch/root/bins/path, which never change.
     // ponytail: plain atomic cursor (packages first, then caches) instead of the priority
-    // queue in design/architecture.md; add it when visible rows visibly wait on others.
+    // queue; add it when visible rows visibly wait on others.
     std::atomic<size_t> next{0};
     auto worker = [&](std::stop_token st) {
         for (size_t i; !st.stop_requested() && (i = next++) < sizes; ++a.done) {

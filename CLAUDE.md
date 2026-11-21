@@ -2,7 +2,7 @@
 
 `top` for package managers: a C++23 TUI that shows every globally installed package, cache, and `$PATH` binary across ecosystems (apt, pacman, brew, cargo, go, uv/pip, npm/pnpm, version shims), with physical disk usage, last-used times, and shadowing conflicts.
 
-Plan and milestone status live in `ROADMAP.md`. How it's built: `design/architecture.md`. How it looks and behaves: `design/tui.md` (gruvbox palette tokens, layout, keys). Follow both, and update them when a decision changes.
+Open work is tracked in GitHub issues.
 
 ## Build
 
@@ -31,13 +31,13 @@ Toolchain: GCC 15 / CMake 4 / Ninja, Linux first. `compile_commands.json` is gen
 ## Versioning & changelog
 
 - CalVer `YYYY.MM.PATCH` (e.g. `2026.11.0`). PATCH resets to 0 each new month. The single source is `project(... VERSION ...)` in `CMakeLists.txt`, and tags are `vYYYY.MM.PATCH`.
-- Every user-visible change adds a line under `## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog sections: Added/Changed/Fixed/Removed).
+- Every user-visible change adds a line under `## [Unreleased]` in `CHANGELOG.md`. `make tag VERSION=YYYY.MM.PATCH` turns it into the release.
 
 ## Conventions
 
 - Format with `.clang-format` (LLVM base, 4-space, 100 cols).
-- UI code uses the palette **tokens** from `design/tui.md`, never raw hex inline.
+- UI code uses the palette **tokens** defined at the top of `src/tui.cpp`, never raw hex inline.
 - C++23, stdlib first (`std::print`, `std::expected`, `std::filesystem` only where it doesn't cost syscalls). POSIX calls (`openat`, `fstatat`, `getdents64`, `mmap`) on hot paths.
 - One provider = one `.cpp` file. Add a shared abstraction only once a second provider actually needs it.
-- Dependencies: add only when the ROADMAP milestone needs them (planned: FTXUI for the TUI, fetched via CMake `FetchContent`).
+- Dependencies: add only when a feature needs them (FTXUI is fetched via CMake `FetchContent`; libcurl is optional).
 - Tests: one small assert-based test per parser, fed by fixture files under `tests/fixtures/`. Never test against the host's real `/var/lib`.

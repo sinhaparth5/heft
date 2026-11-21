@@ -3,7 +3,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/sinhaparth5/pkgtop/main/install.sh | sh
 # Options (environment):
 #   PKGTOP_VERSION=v2026.11.1   a specific release instead of the latest
-#   PKGTOP_BIN_DIR=/usr/local/bin   where to put it (default ~/.local/bin)
+#   PKGTOP_BIN_DIR=/usr/local/bin   where to put it (default ~/.local/bin, /usr/local/bin as root)
 set -eu
 
 repo=sinhaparth5/pkgtop
@@ -11,7 +11,7 @@ die() { echo "pkgtop install: $*" >&2; exit 1; }
 
 case "$(uname -s)" in
 Linux) ;;
-Darwin) die "macOS isn't supported yet (it's on the roadmap). Build from source: https://github.com/$repo#build" ;;
+Darwin) die "macOS isn't supported yet (https://github.com/$repo/issues/1). Build from source: https://github.com/$repo#build" ;;
 MINGW* | MSYS* | CYGWIN*) die "Windows isn't supported. Inside WSL, run this same command." ;;
 *) die "only Linux is supported, not $(uname -s)" ;;
 esac
@@ -45,7 +45,9 @@ fetch "$base/$asset.tar.gz.sha256" "$tmp/$asset.tar.gz.sha256" || die "checksum 
 (cd "$tmp" && sha256sum -c --quiet "$asset.tar.gz.sha256") || die "checksum mismatch, not installing"
 tar -xzf "$tmp/$asset.tar.gz" -C "$tmp"
 
-bin_dir="${PKGTOP_BIN_DIR:-$HOME/.local/bin}"
+default_dir="$HOME/.local/bin"
+[ "$(id -u)" = 0 ] && default_dir=/usr/local/bin
+bin_dir="${PKGTOP_BIN_DIR:-$default_dir}"
 mkdir -p "$bin_dir"
 install -m 755 "$tmp/$asset/pkgtop" "$bin_dir/pkgtop" ||
     die "can't write to $bin_dir (try PKGTOP_BIN_DIR=... or sudo)"
