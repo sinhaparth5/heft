@@ -37,7 +37,7 @@ Panes, from the inspiration:
 | Keys panel | the hint box | Context-sensitive hints. `?` toggles it, and it's hidden by default after first run |
 | Status line | lualine | Mode pill, breadcrumb, sort/filter state, reclaimable total |
 
-Tabs: **Packages** (managed packages), **Caches** (cache stores), **PATH** (every `$PATH` entry with owner and flags), **Stale** (packages sorted by bloat score).
+Tabs: **Packages** (managed packages), **Caches** (cache stores), **PATH** (every `$PATH` binary with owner and flags; the left pane becomes **Owners** with no disk bars, the default sort is lookup order, and Details shows the lookup chain: `✓` wins, `⚠` loses to a different file, `=` same file), **Stale** (packages sorted by bloat score).
 
 ## Responsive rules
 - **< 120 cols:** the Details pane collapses into a 3-line strip above the status line.

@@ -106,5 +106,21 @@ struct GoBuildInfo {
 std::optional<GoBuildInfo> parse_go_buildinfo(std::string_view elf_image);
 ScanResult scan_go(const std::string& bin_dir);
 
+// $PATH graph (path.cpp): one entry per executable in each $PATH dir, in lookup order.
+// Directories that resolve to the same real dir (/bin -> /usr/bin) are listed once.
+struct PathEntry {
+    std::string name;
+    std::string dir;        // the $PATH entry as written
+    std::string target;     // fully resolved file; empty when the symlink chain is broken
+    int rank = 0;           // 1-based position of dir in the deduplicated $PATH
+    int pkg = -1;           // index into the packages passed to scan_path, -1 = none
+    std::string_view owner; // package ecosystem, version manager, "system" or "other"
+    bool shadowed = false;  // an earlier dir has a different file with the same name
+    bool shim = false;      // version-manager shim (pyenv/rbenv/asdf/mise shims, volta)
+    bool dangling = false;  // symlink whose chain ends nowhere; reported, never deleted
+};
+std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Package>& pkgs);
+
 // tui.cpp: full-screen UI. Sizes are computed in the background; returns the exit code.
-int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<std::string> errors);
+int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
+            std::vector<std::string> errors);

@@ -6,6 +6,7 @@ Versioning: [CalVer](https://calver.org/) `YYYY.MM.PATCH`. PATCH starts at 0 eac
 
 ## [Unreleased]
 ### Added
+- `$PATH` graph: every executable on `$PATH` in lookup order, with its owning package (resolved through symlink chains), version manager (pyenv, rbenv, asdf, mise, nvm, volta) or `system`. Flags shadowed binaries (`⚠`), shims (`↯`) and broken links (`✗`, reported, never deleted). Directories that resolve to the same place (`/bin` → `/usr/bin`) count once. Shown in the TUI's PATH tab, where Details lists which copy wins, and as `pkgtop --path`.
 - Providers: pacman, Homebrew, uv tools, pipx, npm globals (including every nvm node), pnpm globals, and Go binaries (module version read from the `.go.buildinfo` ELF section). All read from disk; none run the tool.
 - Interactive TUI (run `pkgtop` with no arguments): Packages and Caches tabs, Ecosystems pane with disk bars, Details pane, keys panel and status line in the gruvbox palette. Sizes stream in from background workers while the UI stays responsive. `j/k`, `g/G`, PgUp/PgDn, `/` fuzzy filter, `s`/`S` sort, `e` ecosystem filter, `1`–`4`/`Tab` tabs, `?` keys panel, `q` quit. Honors `NO_COLOR`; falls back to 256 colours without truecolor; collapses panes below 120 and 100 columns.
 - `pkgtop --list`: headless inventory of installed apt packages, read directly from `/var/lib/dpkg/status` (no subprocess), with Essential flag and scan time.

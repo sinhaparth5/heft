@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <ranges>
 #include <thread>
 
 using namespace ftxui;
@@ -61,24 +62,37 @@ struct Palette {
 };
 
 constexpr std::array<std::string_view, 4> kTabs = {"Packages", "Caches", "PATH", "Stale"};
+constexpr int kDetailsW = 38;
 constexpr std::array<std::string_view, 3> kSorts = {"size", "name", "eco"};
 
 struct Row {
     std::string_view eco;
     std::string name;
-    std::string second; // version (packages) or file count (caches)
-    const std::optional<DiskUsage>* size;
+    std::string second; // version (packages), file count (caches) or "#rank dir" (PATH)
+    const std::optional<DiskUsage>* size; // null on the PATH tab
+    const PathEntry* bin = nullptr;       // PATH tab only
 };
+
+// PATH flags from design/tui.md: ⚠ shadowed, ↯ shim, ✗ broken.
+std::string flags(const PathEntry& e) {
+    std::string f;
+    for (auto [on, g] : {std::pair{e.shadowed, "⚠"}, {e.shim, "↯"}, {e.dangling, "✗"}})
+        if (on)
+            f += f.empty() ? g : std::string{" "} + g;
+    return f;
+}
 
 struct App {
     std::vector<Package> pkgs;
     std::vector<Cache> caches;
+    std::vector<PathEntry> path;
     std::vector<std::string> errors;
-    std::vector<std::string_view> ecos; // every ecosystem seen, in scan order
+    std::vector<std::string_view> ecos; // every ecosystem / PATH owner seen, in scan order
+    size_t providers = 0;               // how many of ecos come from packages and caches
 
     int tab = 0;
-    std::array<int, 2> cur{}; // cursor row in the current view, per table tab
-    std::array<int, 2> top{}; // first visible row, per table tab
+    std::array<int, 3> cur{}; // cursor row in the current view, per table tab
+    std::array<int, 3> top{}; // first visible row, per table tab
     int page = 10;            // visible table rows, from the last render
     int sort = 0;
     bool rev = false;
@@ -90,10 +104,14 @@ struct App {
     std::atomic<size_t> done{0};
     size_t total = 0;
 
-    bool table_tab() const { return tab < 2; }
-    size_t count() const { return tab == 1 ? caches.size() : pkgs.size(); }
+    bool table_tab() const { return tab < 3; }
+    size_t count() const { return tab == 2 ? path.size() : tab == 1 ? caches.size() : pkgs.size(); }
 
     Row row(size_t i) const {
+        if (tab == 2) {
+            auto& e = path[i];
+            return {e.owner, e.name, std::format("#{} {}", e.rank, tilde(e.dir)), nullptr, &e};
+        }
         if (tab == 1) {
             auto& c = caches[i];
             return {c.ecosystem, tilde(c.path), c.size ? std::to_string(c.size->files) : "",
@@ -117,8 +135,8 @@ struct App {
             if (auto r = row(i); (eco.empty() || r.eco == eco) && fuzzy(r.name, filter))
                 v.push_back(i);
         auto bytes = [&](size_t i) {
-            auto& s = *row(i).size;
-            return s ? int64_t(s->bytes) : -1; // unsized rows sink to the bottom
+            auto s = row(i).size;
+            return s && *s ? int64_t((*s)->bytes) : -1; // unsized rows sink; PATH keeps order
         };
         auto less = [&](size_t x, size_t y) {
             auto a = row(x), b = row(y);
@@ -164,6 +182,22 @@ std::string trunc(std::string_view s, int w) {
     return std::string{s.substr(0, w - 1)} + "…";
 }
 
+// Words wider than w (long paths) keep their tail: "…node/v24.18.0/bin". paragraph() won't
+// break inside a word, so without this they run past the pane border.
+std::string fit_words(std::string_view s, int w) {
+    std::string out;
+    for (auto word : std::views::split(s, ' ')) {
+        std::string_view v{word.begin(), word.end()};
+        size_t cols = 0; // UTF-8 code points, close enough for paths and glyphs
+        for (char c : v)
+            cols += (c & 0xc0) != 0x80;
+        if (int(cols) > w)
+            v = v.substr(v.size() - (w - 1));
+        out += (out.empty() ? "" : " ") + std::string{cols > size_t(w) ? "…" : ""} + std::string{v};
+    }
+    return out;
+}
+
 std::string size_cell(const std::optional<DiskUsage>& s) {
     return s ? human_size(s->bytes) + (s->skipped ? "+" : "") : "···";
 }
@@ -190,7 +224,7 @@ struct Ui {
         uint64_t total = a.bytes_of("", false) + a.bytes_of("", true);
         e.push_back(text(std::format(" {} ", human_size(total))) | bgcolor(P.bg_alt));
         e.push_back(text(" "));
-        e.push_back(text(std::format(" {} ecosystems ", a.ecos.size())) | bgcolor(P.bg_alt));
+        e.push_back(text(std::format(" {} ecosystems ", a.providers)) | bgcolor(P.bg_alt));
         if (size_t d = a.done; d < a.total) {
             static constexpr std::string_view spin[] = {"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"};
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -222,6 +256,8 @@ struct Ui {
             if (n == 0)
                 continue;
             list.push_back(line(e, n, a.eco == e));
+            if (a.tab == 2)
+                continue;
             uint64_t b = a.bytes_of(e, a.tab == 1);
             bars.push_back(hbox({text(std::format(" {:<6}", e)) | color(P.eco(e)),
                                  gauge(float(b) / float(max)) | color(P.eco(e)) | flex,
@@ -229,10 +265,12 @@ struct Ui {
         }
         for (auto& err : a.errors)
             list.push_back(text(" ✗ " + err) | bold | color(P.danger));
-        return window(text(" Ecosystems ") | color(P.fg_dim),
-                      vbox({vbox(std::move(list)) | color(P.fg), filler(),
-                            separatorLight() | color(P.border_dim), text(" Disk") | color(P.fg_dim),
-                            vbox(std::move(bars))})) |
+        Elements body{vbox(std::move(list)) | color(P.fg), filler()};
+        if (!bars.empty())
+            body.insert(body.end(), {separatorLight() | color(P.border_dim),
+                                     text(" Disk") | color(P.fg_dim), vbox(std::move(bars))});
+        return window(text(a.tab == 2 ? " Owners " : " Ecosystems ") | color(P.fg_dim),
+                      vbox(std::move(body))) |
                color(P.border_dim) | size(WIDTH, EQUAL, 26);
     }
 
@@ -244,8 +282,8 @@ struct Ui {
         auto& top = a.top[a.tab];
         top = std::clamp(top, std::max(0, pos - h + 1), pos);
 
-        bool caches = a.tab == 1;
-        int second_w = caches ? 9 : 16;
+        bool caches = a.tab == 1, bins = a.tab == 2;
+        int second_w = caches ? 9 : bins ? std::clamp(width / 3, 16, 40) : 16;
         int name_w = width - (1 + 1 + second_w + 1 + 6 + 1 + 7 + 1);
         if (name_w < 16) // narrow: VERSION goes first (design/tui.md column order)
             name_w += second_w + 1, second_w = 0;
@@ -262,19 +300,25 @@ struct Ui {
 
         auto sort_mark = [&](int col) { return a.sort == col ? (a.rev ? "▲" : "▼") : ""; };
         auto [h1, h2, h3] = cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
-                                 caches ? "FILES" : "VERSION", std::format("ECO{}", sort_mark(2)),
-                                 std::format("SIZE{}", sort_mark(0)), caches);
+                                 caches ? "FILES"
+                                 : bins ? std::format("DIR{}", sort_mark(0))
+                                        : "VERSION",
+                                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
+                                 bins ? "FLAGS" : std::format("SIZE{}", sort_mark(0)), caches);
         Elements rows{hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt)};
 
         for (int k = top; k < std::min<int>(top + h, v.size()); ++k) {
             auto r = a.row(v[k]);
-            auto [c1, c2, c3] = cols(r.name, r.second, r.eco, size_cell(*r.size), caches);
+            auto [c1, c2, c3] =
+                cols(r.name, r.second, r.eco, r.bin ? flags(*r.bin) : size_cell(*r.size), caches);
             bool selected = k == pos;
             auto eco = text(c2);
             auto sz = text(c3);
             if (!selected) {
                 eco = eco | color(P.eco(r.eco));
-                if (!*r.size)
+                if (r.bin)
+                    sz = sz | color(r.bin->dangling ? P.danger : r.bin->shadowed ? P.warn : P.info);
+                else if (!*r.size)
                     sz = sz | color(P.fg_dim);
             }
             auto line = hbox({text(c1), eco, sz});
@@ -306,6 +350,34 @@ struct Ui {
             if (s->skipped)
                 kv.emplace_back("Skipped", std::format("{} (permission denied)", s->skipped));
         };
+        if (a.tab == 2) {
+            auto& e = a.path[i];
+            kv.emplace_back(e.name, std::string{e.owner});
+            kv.emplace_back("Path", tilde(e.dir + "/" + e.name));
+            if (e.dangling)
+                kv.emplace_back("Target", "✗ broken link (reported, never deleted)");
+            else if (e.target != e.dir + "/" + e.name)
+                kv.emplace_back("Target", tilde(e.target));
+            if (e.pkg >= 0)
+                kv.emplace_back("Package", a.pkgs[e.pkg].name + " " + a.pkgs[e.pkg].version);
+            if (e.shim)
+                kv.emplace_back("Shim",
+                                std::format("{} picks the real binary at run time", e.owner));
+            // Which binary wins: every same-named entry in lookup order. ✓ runs, ⚠ loses to
+            // a different file, = same file as the winner.
+            kv.emplace_back("Lookup", "first match wins");
+            const PathEntry* win = &*std::ranges::find(a.path, e.name, &PathEntry::name);
+            for (auto& o : a.path)
+                if (o.name == e.name)
+                    kv.emplace_back(std::format("{}#{}", &o == &e ? "▸" : " ", o.rank),
+                                    std::format("{} {}",
+                                                o.dangling   ? "✗"
+                                                : o.shadowed ? "⚠"
+                                                : &o == win  ? "✓"
+                                                             : "=",
+                                                fit_words(tilde(o.dir), kDetailsW - 15)));
+            return kv;
+        }
         if (a.tab == 1) {
             auto& c = a.caches[i];
             kv.emplace_back(std::string{c.ecosystem}, "cache");
@@ -342,10 +414,10 @@ struct Ui {
                 lines.push_back(text(""));
                 continue;
             }
-            lines.push_back(
-                hbox({text(std::format(" {:<9} ", key)) | color(P.fg_dim), paragraph(val)}));
+            lines.push_back(hbox({text(std::format(" {:<9} ", key)) | color(P.fg_dim),
+                                  paragraph(fit_words(val, kDetailsW - 13))}));
         }
-        return pane("Details", vbox(std::move(lines))) | size(WIDTH, EQUAL, 38);
+        return pane("Details", vbox(std::move(lines))) | size(WIDTH, EQUAL, kDetailsW);
     }
 
     Element details_strip() const {
@@ -379,7 +451,8 @@ struct Ui {
         }
         auto filter = a.filtering ? a.filter + "▏" : a.filter.empty() ? "—" : a.filter;
         return hbox({mode, text(" " + crumb) | color(P.fg), filler(),
-                     text(std::format("sort: {} {}   filter: {}   ", kSorts[a.sort],
+                     text(std::format("sort: {} {}   filter: {}   ",
+                                      a.tab == 2 && a.sort == 0 ? "lookup" : kSorts[a.sort],
                                       a.rev ? "▲" : "▼", filter)) |
                          color(P.fg_dim),
                      P.pill(std::format(" {} in caches ", human_size(a.bytes_of("", true))),
@@ -408,9 +481,7 @@ struct Ui {
                 cols.push_back(details_pane());
             body = hbox(std::move(cols)) | flex;
         } else {
-            auto msg = a.tab == 2
-                           ? "The $PATH graph (shadowing, shims, dangling links) lands in M5."
-                           : "Staleness from shell history and atime lands in M6.";
+            auto msg = "Staleness from shell history and atime lands in M6.";
             body = pane(kTabs[a.tab], vbox({filler(), text(msg) | center, filler()}), true) | flex;
         }
 
@@ -430,10 +501,9 @@ struct Ui {
             if (e == Event::Return)
                 return a.filtering = false, true;
             if (e == Event::Backspace)
-                return a.filter.empty() || (a.filter.pop_back(), true), a.cur[0] = a.cur[1] = 0,
-                                                                        true;
+                return a.filter.empty() || (a.filter.pop_back(), true), a.cur = {}, true;
             if (e.is_character())
-                return a.filter += e.character(), a.cur[0] = a.cur[1] = 0, true;
+                return a.filter += e.character(), a.cur = {}, true;
         }
         auto key = [&](char c) { return e == Event::Character(c); };
         if (key('q'))
@@ -472,7 +542,7 @@ struct Ui {
             a.eco = a.eco.empty() ? std::string{a.ecos.empty() ? "" : a.ecos[0]}
                     : it == a.ecos.end() || it + 1 == a.ecos.end() ? ""
                                                                    : std::string{*(it + 1)};
-            a.cur[0] = a.cur[1] = 0;
+            a.cur = {};
             return true;
         }
         return false;
@@ -481,10 +551,12 @@ struct Ui {
 
 } // namespace
 
-int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<std::string> errors) {
+int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
+            std::vector<std::string> errors) {
     App a;
     a.pkgs = std::move(pkgs);
     a.caches = std::move(caches);
+    a.path = std::move(path);
     a.errors = std::move(errors);
     auto seen = [&](std::string_view e) {
         if (std::ranges::find(a.ecos, e) == a.ecos.end())
@@ -494,6 +566,9 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<st
         seen(p.ecosystem);
     for (auto& c : a.caches)
         seen(c.ecosystem);
+    a.providers = a.ecos.size();
+    for (auto& e : a.path)
+        seen(e.owner);
     a.total = a.pkgs.size() + a.caches.size();
 
     const char* nc = std::getenv("NO_COLOR");

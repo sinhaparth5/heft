@@ -138,6 +138,29 @@ int list(bool sizes) {
     return errs.empty() ? 0 : 1;
 }
 
+int path() {
+    auto t0 = Clock::now();
+    auto [pkgs, errs] = scan_all();
+    auto t1 = Clock::now();
+    auto v = scan_path(env_or("PATH", ""), pkgs);
+    auto ms = ms_since(t1);
+    size_t shadowed = 0, dangling = 0;
+    std::println("{:>3}  {:<24}  {:<6}  {:<6}  {}", "#", "NAME", "OWNER", "FLAGS", "DIR");
+    for (auto& e : v) {
+        shadowed += e.shadowed, dangling += e.dangling;
+        auto flags =
+            std::format("{}{}{}", e.shadowed ? "S" : "", e.shim ? "M" : "", e.dangling ? "X" : "");
+        auto pkg = e.pkg >= 0 ? " (" + pkgs[e.pkg].name + ")" : "";
+        std::println("{:>3}  {:<24}  {:<6}  {:<6}  {}{}", e.rank, e.name, e.owner, flags, e.dir,
+                     pkg);
+    }
+    std::println(stderr,
+                 "{} binaries, {} shadowed, {} dangling; resolved in {:.1f} ms ({:.1f} ms "
+                 "with package scan)",
+                 v.size(), shadowed, dangling, ms, ms_since(t0));
+    return errs.empty() ? 0 : 1;
+}
+
 int caches() {
     auto t0 = Clock::now();
     auto cs = find_caches(home());
@@ -171,10 +194,14 @@ int main(int argc, char** argv) {
         return list(arg2 == "--sizes");
     if (arg == "--caches")
         return caches();
+    if (arg == "--path")
+        return path();
     if (arg.empty() && ::isatty(STDIN_FILENO) && ::isatty(STDOUT_FILENO)) {
         auto inv = scan_all();
-        return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(inv.errors));
+        auto path = scan_path(env_or("PATH", ""), inv.pkgs);
+        return run_tui(std::move(inv.pkgs), find_caches(home()), std::move(path),
+                       std::move(inv.errors));
     }
-    std::println(stderr, "usage: pkgtop [--list [--sizes] | --caches | --version]");
+    std::println(stderr, "usage: pkgtop [--list [--sizes] | --caches | --path | --version]");
     return 2;
 }

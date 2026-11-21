@@ -36,10 +36,11 @@ Each milestone ships something runnable. Do them in order and don't start one be
 - [x] Go (`.go.buildinfo` section in `$GOBIN`/`~/go/bin/*`, Go 1.18+)
 - [ ] rpm (later: the db is SQLite, so this needs a dependency or a minimal reader)
 
-## M5: `$PATH` graph
-- [ ] Ordered `$PATH` index, symlink-chain resolution, ownership by provider root prefix
-- [ ] Flags: shadowed, shim (pyenv/rbenv/asdf/mise/nvm), dangling link
-- [ ] "Which binary wins" view
+## M5: `$PATH` graph ✅
+- [x] Ordered `$PATH` index, symlink-chain resolution, ownership by provider root prefix
+- [x] Flags: shadowed, shim (pyenv/rbenv/asdf/mise/nvm), dangling link
+- [x] "Which binary wins" view (PATH tab, Details lists every copy in lookup order)
+- [ ] Later: owner for pnpm's wrapper scripts (they're not links), per-package apt/pacman ownership (now `system`)
 
 ## M6: Usage and staleness
 - [ ] Reverse scan of zsh/bash/fish history to get the last invocation per binary
