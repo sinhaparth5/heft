@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 # CalVer: YYYY.MM.PATCH (PATCH resets each month)
-project(pkgtop VERSION 2026.11.1 LANGUAGES CXX)
+project(pkgtop VERSION 2026.11.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
