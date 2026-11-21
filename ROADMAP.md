@@ -9,7 +9,7 @@ Each milestone ships something runnable. Do them in order and don't start one be
 
 ## M1: Headless inventory (`pkgtop --list`)
 - [ ] `Package { ecosystem, name, version, root, bins }` and `Cache { ecosystem, path }`
-- [ ] dpkg provider: mmap `/var/lib/dpkg/status`, parse stanzas, honor `Essential: yes`
+- [x] dpkg provider: mmap `/var/lib/dpkg/status`, parse stanzas, honor `Essential: yes`
 - [ ] cargo provider: `~/.cargo/.crates2.json`
 - [ ] Plain table output to stdout, with a startup-time measurement (target < 50 ms)
 - [ ] Fixture-based parser tests
