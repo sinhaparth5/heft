@@ -4,6 +4,8 @@
 
 pkgtop is read-only. It never runs a package manager just to look. When you uninstall something, it hands over to that ecosystem's own command.
 
+![pkgtop demo](assets/demo.gif)
+
 > Status: early. Planned work is in [issues](https://github.com/sinhaparth5/pkgtop/issues).
 
 ## Install
