@@ -17,6 +17,8 @@
 #include <ranges>
 #include <thread>
 
+#include <sys/stat.h>
+
 using namespace ftxui;
 
 namespace {
@@ -870,6 +872,21 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     // each item sized once whichever way a worker reached it.
     std::atomic<size_t> next{0};
     std::vector<std::atomic<bool>> claimed(sizes);
+    // Last run's sizes paint at once. A package hit skips its walk; a cache shows the old
+    // size until its rescan lands (files change deep inside without touching the top dir).
+    const char *xdg = std::getenv("XDG_CACHE_HOME"), *home = std::getenv("HOME");
+    std::string cache_dir = xdg && *xdg ? xdg : std::string(home ? home : "") + "/.cache";
+    std::string sizes_file = cache_dir + "/pkgtop/sizes";
+    auto cache_key = [](const Cache& c) { return "cache\t" + c.path; };
+    {
+        auto old = load_sizes(sizes_file);
+        for (size_t i = 0; i < a.pkgs.size(); ++i)
+            if (auto it = old.find(size_key(a.pkgs[i])); it != old.end())
+                a.pkgs[i].size = it->second, claimed[i] = true, ++a.done;
+        for (auto& c : a.caches)
+            if (auto it = old.find(cache_key(c)); it != old.end())
+                c.size = it->second;
+    }
     auto take = [&]() -> std::optional<size_t> {
         {
             std::lock_guard l{a.urgent_mu};
@@ -933,5 +950,14 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     threads.emplace_back(ticker);
 
     screen.Loop(root);
+    SizeCache now;
+    for (auto& p : a.pkgs)
+        if (p.size)
+            now.emplace(size_key(p), *p.size);
+    for (auto& c : a.caches)
+        if (c.size)
+            now.emplace(cache_key(c), *c.size);
+    ::mkdir(cache_dir.c_str(), 0755), ::mkdir((cache_dir + "/pkgtop").c_str(), 0755);
+    save_sizes(sizes_file, now);
     return 0;
 }

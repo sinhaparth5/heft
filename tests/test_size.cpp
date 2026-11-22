@@ -93,6 +93,19 @@ int main() {
                         {"é", "é"}})
         assert(ascii_glyph(g) == a);
 
+    // Size cache: roundtrip; the key moves with the root's mtime; junk lines are dropped.
+    Package p;
+    p.ecosystem = "npm", p.name = "x", p.version = "1", p.root = (root / "sub").string();
+    auto k = size_key(p);
+    auto file = (root / "sizes").string();
+    save_sizes(file, {{k, {42, 3, 1}}, {"cache\t/c", {7, 0, 0}}});
+    auto back = load_sizes(file);
+    assert(back.size() == 2 && back[k].bytes == 42 && back[k].files == 3 && back[k].skipped == 1);
+    write_file(root / "sub/new", 1);
+    assert(size_key(p) != k);
+    write_file(root / "sizes", 0);
+    assert(load_sizes(file).empty() && load_sizes("/nonexistent").empty());
+
     fs::remove_all(root);
     std::println("test_size: ok");
 }

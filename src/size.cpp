@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
+#include <ranges>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -153,4 +155,49 @@ std::string_view ascii_glyph(std::string_view g) {
     if (u >= 0x2580 && u < 0x25a0) // block elements: gauges
         return "#";
     return g;
+}
+
+std::string size_key(const Package& p) {
+    struct stat st{};
+    if (!p.root.empty())
+        ::lstat(p.root.c_str(), &st);
+    // ponytail: root's mtime only sees top-level changes; a version bump covers the rest.
+    return std::format("{}\t{}\t{}\t{}\t{}\t{}.{}", p.ecosystem, p.name, p.version, p.arch, p.root,
+                       st.st_mtim.tv_sec, st.st_mtim.tv_nsec);
+}
+
+SizeCache load_sizes(const std::string& file) {
+    SizeCache out;
+    auto m = map_file(file.c_str());
+    if (!m)
+        return out;
+    for (auto line : std::views::split(m->text, '\n')) {
+        std::string_view l(line.begin(), line.end());
+        DiskUsage u;
+        auto num = [&](uint64_t& v) {
+            auto [p, ec] = std::from_chars(l.data(), l.data() + l.size(), v);
+            if (ec != std::errc{} || p == l.data() + l.size() || *p != ' ')
+                return false;
+            l.remove_prefix(p - l.data() + 1);
+            return true;
+        };
+        if (num(u.bytes) && num(u.files) && num(u.skipped) && !l.empty())
+            out.emplace(l, u);
+    }
+    return out;
+}
+
+void save_sizes(const std::string& file, const SizeCache& sizes) {
+    std::string text;
+    for (auto& [k, u] : sizes)
+        if (k.find('\n') == std::string::npos)
+            text += std::format("{} {} {} {}\n", u.bytes, u.files, u.skipped, k);
+    auto tmp = file + ".tmp";
+    int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0)
+        return;
+    bool ok = ::write(fd, text.data(), text.size()) == ssize_t(text.size());
+    ::close(fd);
+    if (!ok || ::rename(tmp.c_str(), file.c_str()) < 0)
+        ::unlink(tmp.c_str());
 }

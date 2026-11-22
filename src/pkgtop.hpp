@@ -65,6 +65,11 @@ DiskUsage dpkg_package_size(const Package& p, const char* info_dir = "/var/lib/d
 DiskUsage pacman_package_size(const Package& p,
                               const std::string& local_dir = "/var/lib/pacman/local");
 DiskUsage bins_usage(const Package& p); // root/<bin> for each bin
+// Sizes from the last run, so a restart paints at once. Lines are "bytes files skipped key".
+using SizeCache = std::unordered_map<std::string, DiskUsage>;
+std::string size_key(const Package& p); // changes with version, root or root's mtime
+SizeCache load_sizes(const std::string& file);
+void save_sizes(const std::string& file, const SizeCache& sizes); // best effort, atomic
 // Manifest file lists (absolute paths); nullopt when the manifest can't be read.
 std::optional<std::vector<std::string>> dpkg_files(const Package& p,
                                                    const char* info_dir = "/var/lib/dpkg/info");
