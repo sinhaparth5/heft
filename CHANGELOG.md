@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [2026.11.7] - 2026-11-22
 ### Fixed
 - Scrolling with the mouse wheel or a touchpad no longer freezes the UI. Each wheel notch re-sorted the whole list and built ~50k formatted rows to do it (~11 ms at 2k packages), so a fast scroll queued up to a minute of work. Sorting now builds each row once, renders dropped from ~50 ms to ~4 ms, and 5000 wheel events drain instantly.
 
