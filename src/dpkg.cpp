@@ -9,18 +9,18 @@ bool installed(std::string_view status) {
 
 } // namespace
 
-std::vector<Package> parse_dpkg_status(std::string_view text) {
+std::vector<Package> parse_dpkg_status(std::string_view text, bool index) {
     std::vector<Package> out;
     Package cur;
     cur.ecosystem = "apt";
-    bool is_installed = false;
+    bool is_installed = index;
 
     auto flush = [&] {
         if (is_installed && !cur.name.empty())
             out.push_back(std::move(cur));
         cur = Package{};
         cur.ecosystem = "apt";
-        is_installed = false;
+        is_installed = index;
     };
 
     while (!text.empty()) {

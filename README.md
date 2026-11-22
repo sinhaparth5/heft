@@ -30,7 +30,8 @@ cmake -S . -B build -G Ninja && cmake --build build
 ./build/pkgtop --caches
 ./build/pkgtop --path        # every $PATH binary: owner, shadowed/shim/broken flags
 ./build/pkgtop --stale       # packages by bloat score: size x days since last use
-./build/pkgtop --outdated    # newer versions on crates.io, PyPI, npm, Go proxy (network, opt-in)
+./build/pkgtop --outdated    # newer versions: apt/pacman from local indexes; crates.io, PyPI,
+                             # npm, Go proxy, Homebrew over the network (opt-in)
 ./build/pkgtop --updates     # TUI with the same checks in the background
 ```
 

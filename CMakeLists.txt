@@ -35,6 +35,13 @@ target_link_libraries(pkgtop PRIVATE pkgtop_core ftxui::component)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(CURL QUIET libcurl)
+  # Optional: reads pacman's gzip sync dbs for update checks. Linked by name (-lz) so the
+  # static build picks libz.a.
+  pkg_check_modules(ZLIB QUIET zlib)
+endif()
+if(ZLIB_FOUND)
+  target_link_libraries(pkgtop_core PUBLIC ${ZLIB_LIBRARIES})
+  target_compile_definitions(pkgtop_core PUBLIC PKGTOP_ZLIB)
 endif()
 # Release builds: one fully static binary (musl), so it runs on any distro.
 option(PKGTOP_STATIC "Link pkgtop fully statically" OFF)

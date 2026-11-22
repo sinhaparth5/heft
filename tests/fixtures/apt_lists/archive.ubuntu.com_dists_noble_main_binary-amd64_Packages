@@ -1,0 +1,9 @@
+Package: bash
+Architecture: amd64
+Version: 5.2.37-2ubuntu1
+Description: GNU Bourne Again SHell
+ Version: 99.0
+
+Package: ripgrep
+Architecture: amd64
+Version: 14.1.0-1

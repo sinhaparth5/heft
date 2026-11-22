@@ -90,7 +90,8 @@ std::string_view json_get(std::string_view object, std::string_view key);
 using ScanResult = std::expected<std::vector<Package>, std::string>;
 
 // dpkg: /var/lib/dpkg/status. Missing file = not a Debian system = empty, not an error.
-std::vector<Package> parse_dpkg_status(std::string_view text);
+// index = apt's Packages lists (same format, no Status field): keep every entry.
+std::vector<Package> parse_dpkg_status(std::string_view text, bool index = false);
 ScanResult scan_dpkg(const char* path = "/var/lib/dpkg/status");
 
 // cargo: $CARGO_HOME/.crates.toml (cargo writes it alongside .crates2.json; one line per install).
@@ -169,9 +170,19 @@ int run_foreground(const std::vector<std::string>& argv);
 // Opt-in update checks (updates.cpp, http.cpp). Network only on request, never on startup.
 std::string update_url(const Package& p); // "" = no registry for this ecosystem
 std::string parse_latest(std::string_view eco, std::string_view body); // "" when not found
+// <0, 0, >0 like strcmp, dpkg rules: epoch first, then digit runs numerically, ~ sorts first.
+int vercmp(std::string_view a, std::string_view b);
 bool outdated(const Package& p);
-bool updates_supported(); // false when built without libcurl
-// Looks up every package that has a registry, 6 requests at a time; done(i, latest) runs on
+// apt and pacman answer from their own local indexes (refreshed by apt update / pacman -Sy),
+// no network: highest version in the apt lists or pacman sync dbs, "" when none has it.
+bool local_update_source(const Package& p);
+void local_latest(const std::vector<Package>& pkgs,
+                  const std::function<void(size_t, std::string)>& done,
+                  const std::string& apt_lists = "/var/lib/apt/lists",
+                  const std::string& pacman_sync = "/var/lib/pacman/sync");
+bool updates_supported();         // false when built without libcurl: registries are skipped
+bool checkable(const Package& p); // has a local index or (with libcurl) a registry
+// Local indexes first, then every registry, 6 requests at a time; done(i, latest) runs on
 // the worker threads. Returns how many packages it looked up. Stops early when st does.
 size_t check_updates(const std::vector<Package>& pkgs, std::stop_token st,
                      std::function<void(size_t, std::string)> done);

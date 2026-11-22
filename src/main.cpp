@@ -191,12 +191,11 @@ int stale() {
     return errs.empty() ? 0 : 1;
 }
 
-// Packages whose registry has a newer version. Opt-in: this is the only network access.
+// Packages with a newer version in the local apt/pacman index or the registry. Opt-in: this
+// is the only network access.
 int outdated_cmd() {
-    if (!updates_supported()) {
-        std::println(stderr, "pkgtop was built without libcurl: no update checks");
-        return 2;
-    }
+    if (!updates_supported())
+        std::println(stderr, "pkgtop was built without libcurl: only apt/pacman are checked");
     auto [pkgs, errs] = scan_all();
     auto t0 = Clock::now();
     std::stop_source never;

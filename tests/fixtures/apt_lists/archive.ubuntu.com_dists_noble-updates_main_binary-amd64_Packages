@@ -1,0 +1,7 @@
+Package: bash
+Architecture: amd64
+Version: 5.2.37-2ubuntu2
+
+Package: bash
+Architecture: i386
+Version: 9.9-1

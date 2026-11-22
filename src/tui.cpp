@@ -753,9 +753,9 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
         seen(e.owner);
     size_t sizes = a.pkgs.size() + a.caches.size();
     a.total = sizes + a.pkgs.size();    // + one usage result per package
-    if (updates && updates_supported()) // + one per package that has a registry
+    if (updates) // + one per package with a local index or registry
         for (auto& p : a.pkgs)
-            a.total += !update_url(p).empty();
+            a.total += checkable(p);
 
     const char* nc = std::getenv("NO_COLOR");
     Palette pal(!(nc && *nc));
@@ -807,7 +807,7 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
             screen.Post([&a, i, u] { a.pkgs[i].usage = u; });
         }
     });
-    if (updates && updates_supported())
+    if (updates)
         threads.emplace_back([&](std::stop_token st) {
             check_updates(a.pkgs, st, [&](size_t i, std::string v) {
                 screen.Post([&a, i, v] { a.pkgs[i].latest = v; });

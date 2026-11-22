@@ -1,5 +1,6 @@
 #include "pkgtop.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <thread>
@@ -52,8 +53,16 @@ std::string http_get(const std::string&, std::stop_token) { return {}; }
 bool updates_supported() { return false; }
 #endif
 
+bool checkable(const Package& p) {
+    return local_update_source(p) || (updates_supported() && !update_url(p).empty());
+}
+
 size_t check_updates(const std::vector<Package>& pkgs, std::stop_token st,
                      std::function<void(size_t, std::string)> done) {
+    local_latest(pkgs, done);
+    size_t n = std::ranges::count_if(pkgs, local_update_source);
+    if (!updates_supported())
+        return n;
     // One request per registry URL: the same npm package under several nvm nodes asks once.
     std::map<std::string, std::vector<size_t>> by_url;
     for (size_t i = 0; i < pkgs.size(); ++i)
@@ -76,7 +85,6 @@ size_t check_updates(const std::vector<Package>& pkgs, std::stop_token st,
                 }
             });
     }
-    size_t n = 0;
     for (auto& [_, idx] : by_url)
         n += idx.size();
     return n;
