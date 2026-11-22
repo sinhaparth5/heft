@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
 #include <print>
 #include <ranges>
 #include <thread>
@@ -136,6 +137,13 @@ struct App {
     bool filtering = false;
     std::string eco; // "" = all
     bool keys = true;
+    bool focus_eco = false;  // Tab: j/k move through the Ecosystems pane instead of the table
+    bool picking = false;    // e: ecosystem popup open
+    std::string picked_from; // eco before the popup opened; Esc restores it
+
+    // Unsized rows on screen, sized before the rest. Written by render, popped by workers.
+    std::mutex urgent_mu;
+    std::vector<size_t> urgent; // pkgs index, or pkgs.size() + caches index
 
     std::function<std::vector<Package>()> rescan;
     std::optional<Confirm> confirm;
@@ -217,6 +225,32 @@ struct App {
         auto v = view();
         return v.empty() ? std::nullopt
                          : std::optional{v[std::clamp(cur[tab], 0, int(v.size()) - 1)]};
+    }
+
+    // "all" (as "") then every ecosystem with rows in this tab, with row counts.
+    std::vector<std::pair<std::string_view, size_t>> eco_counts() const {
+        std::vector<std::pair<std::string_view, size_t>> l{{"", 0}};
+        for (auto e : ecos)
+            l.emplace_back(e, 0);
+        for (size_t i = 0; i < count(); ++i)
+            if (in_tab(i)) {
+                ++l[0].second;
+                ++std::ranges::find(l, row(i).eco, [](auto& x) { return x.first; })->second;
+            }
+        std::erase_if(l, [&](auto& x) { return !x.first.empty() && !x.second; });
+        return l;
+    }
+
+    void pick_eco(int k) {
+        auto l = eco_counts();
+        eco = l[std::clamp(k, 0, int(l.size()) - 1)].first;
+        cur[tab] = 0;
+    }
+
+    void step_eco(int d) {
+        auto l = eco_counts();
+        auto it = std::ranges::find(l, eco, [](auto& x) { return x.first; });
+        pick_eco(it == l.end() ? 0 : int(it - l.begin()) + d);
     }
 
     void say(std::string s, bool ok) {
@@ -339,6 +373,11 @@ std::string size_cell(const std::optional<DiskUsage>& s) {
 struct Ui {
     App& a;
     const Palette& P;
+    // Screen areas from the last render, for mouse hit-testing. Empty until drawn.
+    static constexpr Box kNone{1, 0, 1, 0};
+    std::array<Box, 4> tab_box{kNone, kNone, kNone, kNone};
+    Box rows_box = kNone, eco_box = kNone;
+    bool left = false; // Ecosystems pane on screen
 
     Element pane(std::string_view title, Element body, bool focused = false) const {
         auto t = text(std::format(" {} ", title));
@@ -346,12 +385,13 @@ struct Ui {
         return window(t, body | color(P.fg)) | color(focused ? P.border : P.border_dim);
     }
 
-    Element top_bar() const {
+    Element top_bar() {
         Elements e{P.pill(" pkgtop ", P.accent), text(" ")};
         for (int i = 0; i < int(kTabs.size()); ++i) {
             auto label = std::format(" {} {} ", i + 1, kTabs[i]);
-            e.push_back(i == a.tab ? P.pill(label, P.accent)
-                                   : text(label) | bgcolor(P.bg_alt) | color(P.fg_dim));
+            e.push_back((i == a.tab ? P.pill(label, P.accent)
+                                    : text(label) | bgcolor(P.bg_alt) | color(P.fg_dim)) |
+                        reflect(tab_box[i]));
             e.push_back(text(" "));
         }
         e.push_back(filler());
@@ -371,44 +411,40 @@ struct Ui {
         return hbox(std::move(e));
     }
 
-    Element ecosystems() const {
-        Elements list, bars;
-        auto line = [&](std::string_view name, size_t n, bool cur) {
-            auto e = hbox({text(cur ? " ▸ " : "   "), text(std::string{name}) | flex,
+    // "all" + one line per ecosystem; shared by the pane and the e popup. Clicks map by line.
+    Element eco_lines() {
+        Elements list;
+        for (auto [e, n] : a.eco_counts()) {
+            auto l = hbox({text(a.eco == e ? " ▸ " : "   "),
+                           text(e.empty() ? "all" : std::string{e}) | flex,
                            text(std::format("{:>6} ", n))});
-            return cur ? e | bold | color(P.accent) : e;
-        };
-        size_t all = 0;
-        for (size_t i = 0; i < a.count(); ++i)
-            all += a.in_tab(i);
-        list.push_back(line("all", all, a.eco.empty()));
+            list.push_back(a.eco == e ? l | bold | color(P.accent) : l);
+        }
+        return vbox(std::move(list)) | reflect(eco_box);
+    }
 
+    Element ecosystems() {
+        Elements bars;
         uint64_t max = 1;
         for (auto e : a.ecos)
             max = std::max(max, a.bytes_of(e, a.tab == 1));
-        for (auto e : a.ecos) {
-            size_t n = 0;
-            for (size_t i = 0; i < a.count(); ++i)
-                n += a.in_tab(i) && a.row(i).eco == e;
-            if (n == 0)
-                continue;
-            list.push_back(line(e, n, a.eco == e));
-            if (a.tab == 2)
+        for (auto [e, n] : a.eco_counts()) {
+            if (e.empty() || a.tab == 2)
                 continue;
             uint64_t b = a.bytes_of(e, a.tab == 1);
             bars.push_back(hbox({text(std::format(" {:<6}", e)) | color(P.eco(e)),
                                  gauge(float(b) / float(max)) | color(P.eco(e)) | flex,
                                  text(std::format("{:>6} ", human_size(b)))}));
         }
+        Elements body{eco_lines()};
         for (auto& err : a.errors)
-            list.push_back(text(" ✗ " + err) | bold | color(P.danger));
-        Elements body{vbox(std::move(list)) | color(P.fg), filler()};
+            body.push_back(text(" ✗ " + err) | bold | color(P.danger));
+        body.push_back(filler());
         if (!bars.empty())
             body.insert(body.end(), {separatorLight() | color(P.border_dim),
                                      text(" Disk") | color(P.fg_dim), vbox(std::move(bars))});
-        return window(text(a.tab == 2 ? " Owners " : " Ecosystems ") | color(P.fg_dim),
-                      vbox(std::move(body))) |
-               color(P.border_dim) | size(WIDTH, EQUAL, 26);
+        return pane(a.tab == 2 ? "Owners" : "Ecosystems", vbox(std::move(body)), a.focus_eco) |
+               size(WIDTH, EQUAL, 26);
     }
 
     Element table(int width, int height) {
@@ -444,10 +480,14 @@ struct Ui {
                          : "VERSION",
                  std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
                  bins ? "FLAGS" : std::format("SIZE{}", stale ? "" : sort_mark(0)), caches);
-        Elements rows{hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt)};
+        auto header = hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt);
+        Elements rows;
+        std::vector<size_t> unsized; // bottom row first: workers pop from the back
 
         for (int k = top; k < std::min<int>(top + h, v.size()); ++k) {
             auto r = a.row(v[k]);
+            if (r.size && !*r.size)
+                unsized.insert(unsized.begin(), a.tab == 1 ? a.pkgs.size() + v[k] : v[k]);
             auto [c1, c2, c3] =
                 cols(r.name, r.second, r.eco, r.bin ? flags(*r.bin) : size_cell(*r.size), caches);
             bool selected = k == pos;
@@ -468,8 +508,15 @@ struct Ui {
         if (v.empty())
             rows.push_back(text(a.count() ? " no matches" : " nothing found") | color(P.fg_dim));
 
+        if (a.done < a.total) {
+            std::lock_guard l{a.urgent_mu};
+            a.urgent = std::move(unsized);
+        }
+
         auto title = std::format("{} {}/{}", kTabs[a.tab], v.empty() ? 0 : pos + 1, v.size());
-        return pane(title, vbox(std::move(rows)), true) | flex;
+        return pane(title, vbox({header, vbox(std::move(rows)) | reflect(rows_box)}),
+                    !(left && a.focus_eco)) |
+               flex;
     }
 
     // Key/value lines for the selected item; shared by the Details pane and the narrow strip.
@@ -581,7 +628,7 @@ struct Ui {
         std::pair<std::string_view, std::string_view> hints[] = {
             {"/", "Filter"},    {"s", "Sort"},      {"S", "Reverse"},
             {"e", "Ecosystem"}, {"u", "Uninstall"}, {"p", "Purge"},
-            {"1-4", "Tab"},     {"?", "Hide keys"}, {"q", "Quit"}};
+            {"Tab", "Focus"},   {"?", "Hide keys"}, {"q", "Quit"}};
         Elements e;
         for (auto [k, what] : hints) {
             e.push_back(text(std::format("  {} ", k)) | bold | color(P.accent));
@@ -619,13 +666,15 @@ struct Ui {
 
     Element render() {
         auto [w, h] = Terminal::Size();
+        tab_box.fill(kNone), rows_box = eco_box = kNone;
         if (w < 80 || h < 24)
             return vbox({filler(),
                          text(std::format("terminal too small: {}×{} (need 80×24)", w, h)) | center,
                          filler()}) |
                    bgcolor(P.bg) | color(P.fg);
 
-        bool left = w >= 100, right = w >= 120;
+        left = w >= 100;
+        bool right = w >= 120;
         Element body;
         {
             int table_w = w - (left ? 26 : 0) - (right ? 38 : 0) - 2;
@@ -647,6 +696,10 @@ struct Ui {
             page.push_back(keys());
         page.push_back(status_line());
         auto screen = vbox(std::move(page)) | bgcolor(P.bg) | color(P.fg);
+        if (a.picking)
+            return dbox({screen, window(text(" Ecosystem ") | bold | color(P.accent),
+                                        eco_lines() | color(P.fg) | size(WIDTH, EQUAL, 24)) |
+                                     color(P.accent) | bgcolor(P.bg) | clear_under | center});
         if (!a.confirm)
             return screen;
         return dbox({screen, modal() | clear_under | center});
@@ -702,12 +755,26 @@ struct Ui {
                 return a.filter += e.character(), a.cur = {}, true;
         }
         auto key = [&](char c) { return e == Event::Character(c); };
+        bool down = key('j') || e == Event::ArrowDown, up = key('k') || e == Event::ArrowUp;
+        if (e.is_mouse())
+            return click(e.mouse());
+        if (a.picking) { // popup: j/k pick live, Enter keeps, Esc restores
+            if (down || up)
+                a.step_eco(down ? 1 : -1);
+            else if (e == Event::Escape)
+                a.eco = a.picked_from, a.picking = false;
+            else if (e == Event::Return || key('e') || key('q'))
+                a.picking = false;
+            return true;
+        }
+        if (left && a.focus_eco && (down || up))
+            return a.step_eco(down ? 1 : -1), true;
+        if (left && a.focus_eco && e == Event::Return)
+            return a.focus_eco = false, true;
         if (key('q'))
             return screen.Exit(), true;
-        if (key('j') || e == Event::ArrowDown)
-            return a.move(1), true;
-        if (key('k') || e == Event::ArrowUp)
-            return a.move(-1), true;
+        if (down || up)
+            return a.move(down ? 1 : -1), true;
         if (e == Event::PageDown)
             return a.move(a.page), true;
         if (e == Event::PageUp)
@@ -719,9 +786,8 @@ struct Ui {
         for (char c = '1'; c <= '4'; ++c)
             if (key(c))
                 return a.tab = c - '1', a.eco.clear(), true;
-        // ponytail: Tab cycles tabs; pane focus cycling comes with a second focusable pane.
-        if (e == Event::Tab)
-            return a.tab = (a.tab + 1) % int(kTabs.size()), a.eco.clear(), true;
+        if (e == Event::Tab || e == Event::TabReverse)
+            return a.focus_eco = left && !a.focus_eco, true;
         if (key('/'))
             return a.filtering = true, true;
         if (e == Event::Escape)
@@ -734,13 +800,25 @@ struct Ui {
             return a.keys = !a.keys, true;
         if (key('u') || key('p'))
             return a.ask(key('p')), true;
-        // ponytail: `e` cycles ecosystems instead of opening the popup.
-        if (key('e')) {
-            auto it = std::ranges::find(a.ecos, a.eco);
-            a.eco = a.eco.empty() ? std::string{a.ecos.empty() ? "" : a.ecos[0]}
-                    : it == a.ecos.end() || it + 1 == a.ecos.end() ? ""
-                                                                   : std::string{*(it + 1)};
-            a.cur = {};
+        if (key('e'))
+            return a.picked_from = a.eco, a.picking = true, true;
+        return false;
+    }
+
+    // Wheel scrolls the table; left click picks a tab, row or ecosystem.
+    bool click(const Mouse& m) {
+        if (m.button == Mouse::WheelDown || m.button == Mouse::WheelUp)
+            return a.move(m.button == Mouse::WheelDown ? 3 : -3), true;
+        if (m.button != Mouse::Left || m.motion != Mouse::Pressed)
+            return false;
+        for (int i = 0; i < int(tab_box.size()); ++i)
+            if (tab_box[i].Contain(m.x, m.y))
+                return a.tab = i, a.eco.clear(), a.picking = false, true;
+        if (eco_box.Contain(m.x, m.y))
+            return a.pick_eco(m.y - eco_box.y_min), a.picking = false, true;
+        if (!a.picking && rows_box.Contain(m.x, m.y)) {
+            a.cur[a.tab] = a.top[a.tab] + (m.y - rows_box.y_min);
+            a.move(0), a.focus_eco = false;
             return true;
         }
         return false;
@@ -788,11 +866,28 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
 
     // Size workers. Results go back through screen.Post so the UI thread stays the only
     // writer of App. Workers only read name/arch/root/bins/path, which never change.
-    // ponytail: plain atomic cursor (packages first, then caches) instead of the priority
-    // queue; add it when visible rows visibly wait on others.
+    // Rows on screen first (a.urgent), then packages and caches in order. claimed keeps
+    // each item sized once whichever way a worker reached it.
     std::atomic<size_t> next{0};
+    std::vector<std::atomic<bool>> claimed(sizes);
+    auto take = [&]() -> std::optional<size_t> {
+        {
+            std::lock_guard l{a.urgent_mu};
+            while (!a.urgent.empty()) {
+                size_t i = a.urgent.back();
+                a.urgent.pop_back();
+                if (i < sizes && !claimed[i].exchange(true))
+                    return i;
+            }
+        }
+        for (size_t i; (i = next++) < sizes;)
+            if (!claimed[i].exchange(true))
+                return i;
+        return std::nullopt;
+    };
     auto worker = [&](std::stop_token st) {
-        for (size_t i; !st.stop_requested() && (i = next++) < sizes; ++a.done) {
+        for (std::optional<size_t> j; !st.stop_requested() && (j = take()); ++a.done) {
+            size_t i = *j;
             if (i < a.pkgs.size()) {
                 auto& p = a.pkgs[i];
                 auto u = package_size(p);

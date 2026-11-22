@@ -4,6 +4,12 @@
 ### Added
 - Update checks for apt and pacman, read from the local package indexes (`apt update` / `pacman -Sy` keep them fresh; no network), and for Homebrew via formulae.brew.sh. apt and pacman checks also work in builds without libcurl.
 - `--ascii` draws the TUI with ASCII only (borders, gauges, spinner, status glyphs), for terminals without box-drawing characters.
+- Mouse: click a tab, row or ecosystem; the wheel scrolls.
+- `e` opens an ecosystem picker (j/k to choose, Enter to keep, Esc to undo) instead of cycling.
+- `Tab` moves focus between the table and the Ecosystems pane (it no longer cycles tabs; use 1-4).
+
+### Changed
+- Rows on screen are sized first, so they no longer wait behind a huge cache or store.
 
 ### Fixed
 - Versions are now compared properly (epochs, numeric parts, pre-releases), so an installed version newer than the registry's latest no longer shows as outdated.
