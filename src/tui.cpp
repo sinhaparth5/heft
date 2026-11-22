@@ -136,9 +136,10 @@ struct App {
     size_t providers = 0;               // how many of ecos come from packages and caches
 
     int tab = 0;
-    std::array<int, 5> cur{}; // cursor row in the current view, per tab
-    std::array<int, 5> top{}; // first visible row, per tab
-    int page = 10;            // visible table rows, from the last render
+    std::array<int, 5> cur{};   // cursor row in the current view, per tab
+    std::array<int, 5> top{};   // first visible row, per tab
+    std::array<int, 5> shown{}; // rows in the view at the last render, per tab
+    int page = 10;              // visible table rows, from the last render
     int sort = 0;
     bool rev = false;
     std::string filter;
@@ -212,7 +213,10 @@ struct App {
                 p.usage && p.usage->conf != Usage::none ? last_active(*p.usage, now) : ""};
     }
 
-    // Filtered + sorted indices for the current tab. Rebuilt per frame: ~3k rows is < 1 ms.
+    // Filtered + sorted indices for the current tab. Rebuilt per frame and per wheel notch,
+    // so each row is built once and the sort compares plain keys. A comparator calling
+    // row() formatted ~50k Rows per sort (~11 ms at 2k packages), and a fast wheel queued
+    // a minute of those behind it.
     std::vector<size_t> view() const {
         auto fuzzy = [](std::string_view hay, std::string_view needle) {
             size_t i = 0;
@@ -221,38 +225,54 @@ struct App {
                     ++i;
             return i == needle.size();
         };
-        std::vector<size_t> v;
-        for (size_t i = 0; i < count(); ++i)
-            if (auto r = row(i);
-                in_tab(i) && (eco.empty() || r.eco == eco) && fuzzy(r.name, filter))
-                v.push_back(i);
-        auto bytes = [&](size_t i) {
-            auto s = row(i).size;
-            return s && *s ? int64_t((*s)->bytes) : -1; // unsized rows sink; PATH keeps order
+        struct Key {
+            size_t i;
+            std::string_view eco;
+            std::string name;
+            int64_t bytes; // unsized rows sink; PATH keeps order
+            double bloat;  // Stale tab only
         };
-        auto less = [&](size_t x, size_t y) {
-            auto a = row(x), b = row(y);
+        std::vector<Key> keys;
+        for (size_t i = 0; i < count(); ++i) {
+            if (!in_tab(i))
+                continue;
+            auto r = row(i);
+            if ((eco.empty() || r.eco == eco) && fuzzy(r.name, filter))
+                keys.push_back({i, r.eco, std::move(r.name),
+                                r.size && *r.size ? int64_t((*r.size)->bytes) : -1,
+                                sort == 0 && tab == 3 ? bloat(pkgs[i], now) : 0.0});
+        }
+        auto less = [&](const Key& a, const Key& b) {
             if (sort == 0 && tab == 3) // bloat: big and long idle first
-                return bloat(pkgs[x], now) > bloat(pkgs[y], now);
+                return a.bloat > b.bloat;
             if (sort == 0)
-                return bytes(x) > bytes(y);
+                return a.bytes > b.bytes;
             if (sort == 1)
                 return a.name < b.name;
             return std::tie(a.eco, a.name) < std::tie(b.eco, b.name);
         };
         // ponytail: re-sorts every frame, so rows reorder while sizes stream in; throttle
         // to 250 ms if that turns out to be distracting.
-        std::ranges::stable_sort(v,
-                                 [&](size_t x, size_t y) { return rev ? less(y, x) : less(x, y); });
+        std::ranges::stable_sort(
+            keys, [&](const Key& x, const Key& y) { return rev ? less(y, x) : less(x, y); });
+        std::vector<size_t> v;
+        v.reserve(keys.size());
+        for (auto& k : keys)
+            v.push_back(k.i);
         return v;
     }
 
     // The cursor is a row position, not an item: rows may reorder under it while sizes
     // stream in (like htop), but the cursor itself never jumps.
-    int pos(size_t n) { return cur[tab] = std::clamp(cur[tab], 0, std::max(0, int(n) - 1)); }
+    int pos(size_t n) {
+        shown[tab] = int(n);
+        return cur[tab] = std::clamp(cur[tab], 0, std::max(0, int(n) - 1));
+    }
 
+    // Clamps to the row count the last render saw rather than rebuilding view() per wheel
+    // notch; the next render's pos() corrects it if the list changed since.
     void move(int delta) {
-        cur[tab] = std::clamp(cur[tab] + delta, 0, std::max(0, int(view().size()) - 1));
+        cur[tab] = std::clamp(cur[tab] + delta, 0, std::max(0, shown[tab] - 1));
     }
 
     std::optional<size_t> selected() const {
