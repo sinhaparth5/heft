@@ -237,12 +237,14 @@ int caches() {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string_view arg = argc > 1 ? argv[1] : "";
+    std::vector<std::string_view> args(argv + 1, argv + argc);
+    bool ascii = std::erase(args, "--ascii") > 0;
+    std::string_view arg = args.size() > 0 ? args[0] : "";
     if (arg == "--version") {
         std::println("pkgtop {}", PKGTOP_VERSION);
         return 0;
     }
-    std::string_view arg2 = argc > 2 ? argv[2] : "";
+    std::string_view arg2 = args.size() > 1 ? args[1] : "";
     if (arg == "--list")
         return list(arg2 == "--sizes");
     if (arg == "--caches")
@@ -258,10 +260,11 @@ int main(int argc, char** argv) {
         auto path = scan_path(env_or("PATH", ""), inv.pkgs);
         return run_tui(
             std::move(inv.pkgs), find_caches(home()), std::move(path), std::move(inv.errors),
-            [] { return scan_all().pkgs; }, arg == "--updates");
+            [] { return scan_all().pkgs; }, arg == "--updates", ascii);
     }
-    std::println(stderr,
-                 "usage: pkgtop [--updates | --list [--sizes] | --caches | --path | --stale | "
-                 "--outdated | --version]");
+    std::println(
+        stderr,
+        "usage: pkgtop [--ascii] [--updates | --list [--sizes] | --caches | --path | --stale | "
+        "--outdated | --version]");
     return 2;
 }

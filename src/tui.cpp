@@ -85,6 +85,24 @@ std::string flags(const PathEntry& e) {
     return f;
 }
 
+// --ascii: render as usual, then swap each non-ASCII cell for an ASCII one. FTXUI has no
+// ASCII border style, so this covers borders, gauges, the spinner and status glyphs at once.
+class Ascii : public Node {
+  public:
+    explicit Ascii(Element e) : Node({std::move(e)}) {}
+    void SetBox(Box b) override {
+        Node::SetBox(b);
+        children_[0]->SetBox(b);
+    }
+    void Render(Screen& s) override {
+        Node::Render(s);
+        for (int y = box_.y_min; y <= box_.y_max; ++y)
+            for (int x = box_.x_min; x <= box_.x_max; ++x)
+                if (auto& c = s.PixelAt(x, y).character; c.size() > 1)
+                    c = std::string{ascii_glyph(c)};
+    }
+};
+
 // A pending uninstall/purge, shown in the confirmation modal.
 struct Confirm {
     std::string title, reclaim;
@@ -733,7 +751,7 @@ struct Ui {
 
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
             std::vector<std::string> errors, std::function<std::vector<Package>()> rescan,
-            bool updates) {
+            bool updates, bool ascii) {
     App a;
     a.rescan = std::move(rescan);
     a.pkgs = std::move(pkgs);
@@ -752,8 +770,8 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     for (auto& e : a.path)
         seen(e.owner);
     size_t sizes = a.pkgs.size() + a.caches.size();
-    a.total = sizes + a.pkgs.size();    // + one usage result per package
-    if (updates) // + one per package with a local index or registry
+    a.total = sizes + a.pkgs.size(); // + one usage result per package
+    if (updates)                     // + one per package with a local index or registry
         for (auto& p : a.pkgs)
             a.total += checkable(p);
 
@@ -762,7 +780,10 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     Ui ui{a, pal};
 
     auto screen = ScreenInteractive::Fullscreen();
-    auto root = CatchEvent(Renderer([&] { return ui.render(); }),
+    auto root = CatchEvent(Renderer([&] {
+                               auto e = ui.render();
+                               return ascii ? std::make_shared<Ascii>(std::move(e)) : e;
+                           }),
                            [&](Event e) { return ui.on_event(e, screen); });
 
     // Size workers. Results go back through screen.Post so the UI thread stays the only

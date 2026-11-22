@@ -24,6 +24,8 @@ struct DiskUsage {
 DiskUsage disk_usage(const char* path);                    // file or whole directory tree
 DiskUsage files_usage(std::span<const std::string> paths); // explicit file list; dirs ignored
 std::string human_size(uint64_t bytes);                    // 1536 -> "1.5K"
+// One screen cell's glyph for --ascii: "┌" -> "+", "●" -> "*"; unknown glyphs pass through.
+std::string_view ascii_glyph(std::string_view g);
 
 // When a package was last used (usage.cpp), from shell history and binary atimes.
 struct Usage {
@@ -191,4 +193,5 @@ size_t check_updates(const std::vector<Package>& pkgs, std::stop_token st,
 // rescan re-reads every provider's metadata; the TUI keeps only the mutated provider's rows.
 int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<PathEntry> path,
             std::vector<std::string> errors, std::function<std::vector<Package>()> rescan,
-            bool updates); // updates: look up registry versions in the background
+            bool updates, // updates: look up registry versions in the background
+            bool ascii);  // ascii: draw with ASCII only (--ascii)

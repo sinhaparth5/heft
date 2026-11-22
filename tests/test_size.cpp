@@ -79,6 +79,20 @@ int main() {
     assert(human_size(512) == "512B" && human_size(1536) == "1.5K" &&
            human_size(3ull << 30) == "3.0G");
 
+    // --ascii glyphs: borders, gauges, spinner, status marks; ASCII and unknowns pass through.
+    for (auto [g, a] : {std::pair{"┌", "+"},
+                        {"─", "-"},
+                        {"│", "|"},
+                        {"█", "#"},
+                        {"⣾", "|"},
+                        {"⣽", "/"},
+                        {"●", "*"},
+                        {"✗", "x"},
+                        {"·", "."},
+                        {"a", "a"},
+                        {"é", "é"}})
+        assert(ascii_glyph(g) == a);
+
     fs::remove_all(root);
     std::println("test_size: ok");
 }

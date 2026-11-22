@@ -33,6 +33,7 @@ cmake -S . -B build -G Ninja && cmake --build build
 ./build/pkgtop --outdated    # newer versions: apt/pacman from local indexes; crates.io, PyPI,
                              # npm, Go proxy, Homebrew over the network (opt-in)
 ./build/pkgtop --updates     # TUI with the same checks in the background
+./build/pkgtop --ascii       # TUI drawn with ASCII only (combines with --updates)
 ```
 
 Releasing: add lines under `[Unreleased]` in `CHANGELOG.md`, commit, then `make tag VERSION=YYYY.MM.PATCH`. It bumps the version, turns `[Unreleased]` into the release notes, tags `vYYYY.MM.PATCH` and pushes; CI builds and publishes the release.

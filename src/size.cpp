@@ -1,5 +1,6 @@
 #include "pkgtop.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <dirent.h>
@@ -128,4 +129,28 @@ DiskUsage package_size(const Package& p) {
     if (p.ecosystem == "cargo" || p.ecosystem == "go")
         return bins_usage(p);
     return disk_usage(p.root.c_str());
+}
+
+std::string_view ascii_glyph(std::string_view g) {
+    auto b = [&](size_t i) { return char32_t(static_cast<unsigned char>(g[i])); };
+    char32_t u = g.size() == 2   ? (b(0) & 0x1f) << 6 | (b(1) & 0x3f)
+                 : g.size() == 3 ? (b(0) & 0x0f) << 12 | (b(1) & 0x3f) << 6 | (b(2) & 0x3f)
+                                 : 0;
+    static constexpr std::pair<char32_t, std::string_view> map[] = {
+        {0x00b7, "."}, {0x00d7, "x"}, {0x2014, "-"}, {0x2026, "."}, {0x2191, "^"}, {0x2192, ">"},
+        {0x21af, "~"}, {0x25b2, "^"}, {0x25bc, "v"}, {0x25b8, ">"}, {0x25cf, "*"}, {0x25d0, "+"},
+        {0x25cc, "."}, {0x26a0, "!"}, {0x2713, "+"}, {0x2717, "x"}, {0x258f, "|"}, {0x2500, "-"},
+        {0x2501, "-"}, {0x2550, "-"}, {0x2502, "|"}, {0x2503, "|"}, {0x2551, "|"}};
+    for (auto [c, a] : map)
+        if (u == c)
+            return a;
+    static constexpr char32_t spin[] = {0x28fe, 0x28fd, 0x28fb, 0x28bf,
+                                        0x287f, 0x28df, 0x28ef, 0x28f7};
+    if (auto i = std::ranges::find(spin, u) - spin; i < 8)
+        return std::string_view{"|/-\\"}.substr(i % 4, 1);
+    if (u >= 0x2500 && u < 0x2580) // other box drawing: corners, tees
+        return "+";
+    if (u >= 0x2580 && u < 0x25a0) // block elements: gauges
+        return "#";
+    return g;
 }
