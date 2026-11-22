@@ -8,6 +8,7 @@
 - `e` opens an ecosystem picker (j/k to choose, Enter to keep, Esc to undo) instead of cycling.
 - `Tab` moves focus between the table and the Ecosystems pane (it no longer cycles tabs; use 1-4).
 - Sizes are remembered between runs (`$XDG_CACHE_HOME/pkgtop/sizes`), so the TUI paints them at once. A package is only re-measured when its version, root or root's mtime changes. Caches show the last size until a fresh scan replaces it.
+- PATH ownership: pnpm's global bins (wrapper scripts) are traced to their package, and binaries in system dirs show the apt/pacman package that installed them instead of `system` (filled in once manifests are read).
 
 ### Changed
 - Rows on screen are sized first, so they no longer wait behind a huge cache or store.

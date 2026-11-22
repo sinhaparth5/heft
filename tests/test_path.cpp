@@ -63,6 +63,28 @@ int main() {
     auto& py = find(v, "python", 3);
     assert(py.shim && py.owner == "pyenv");
 
+    // pnpm wrappers (sh scripts, not links): cmd-shim-target line, a $basedir exec (older
+    // pnpm), and pn exec'ing the pnpm beside it. apt owns files its manifest bins list.
+    exe(t / "pnpm/node_modules/pnpm/bin/pnpm.cjs");
+    exe(t / "pnpm/node_modules/tsc/bin/tsc");
+    exe(t / "apt/bin/curl");
+    fs::create_directories(t / "w");
+    std::ofstream{t / "w/pnpm"} << "#!/bin/sh\nexec node \"$x\"\n# cmd-shim-target=" << t.string()
+                                << "/pnpm/node_modules/pnpm/bin/pnpm.cjs\n";
+    std::ofstream{t / "w/tsc"}
+        << "#!/bin/sh\nexec \"$basedir/../pnpm/node_modules/tsc/bin/tsc\" \"$@\"\n";
+    std::ofstream{t / "w/pn"} << "#!/bin/sh\nexec \"${self%/*}/pnpm\" \"$@\"\n";
+    for (auto n : {"pnpm", "tsc", "pn"})
+        fs::permissions(t / "w" / n, fs::perms::owner_all);
+    pkgs.resize(5);
+    pkgs[2].ecosystem = "pnpm", pkgs[2].root = t / "pnpm/node_modules/pnpm";
+    pkgs[3].ecosystem = "pnpm", pkgs[3].root = t / "pnpm/node_modules/tsc";
+    pkgs[4].ecosystem = "apt", pkgs[4].bins = {t / "apt-link/bin/curl"}; // dir via a symlink
+    fs::create_symlink(t / "apt", t / "apt-link");
+    auto w = scan_path(std::format("{0}/w:{0}/apt/bin", t.string()), pkgs);
+    assert(find(w, "pnpm", 1).pkg == 2 && find(w, "pn", 1).pkg == 2 && find(w, "tsc", 1).pkg == 3);
+    assert(find(w, "curl", 2).owner == "apt" && find(w, "curl", 2).pkg == 4);
+
     fs::remove_all(t);
     std::println("test_path: ok");
 }

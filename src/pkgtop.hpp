@@ -40,7 +40,7 @@ struct Package {
     std::string name;
     std::string version;
     std::string root;                  // install root; empty when files are scattered (apt)
-    std::vector<std::string> bins;     // exposed executables
+    std::vector<std::string> bins;     // exposed executables; apt/pacman: manifest paths, late
     bool essential = false;            // never offer uninstall
     std::string arch;                  // apt only: locates name:arch.list for Multi-Arch packages
     std::optional<DiskUsage> size;     // filled in later, never during scan
@@ -147,6 +147,9 @@ struct PathEntry {
     bool dangling = false;  // symlink whose chain ends nowhere; reported, never deleted
 };
 std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Package>& pkgs);
+// Hands entries to the apt/pacman package whose bins (manifest paths from package_bins, filled
+// in once read: too slow cold for startup) list them. scan_path runs it too.
+void own_system_bins(std::vector<PathEntry>& path, const std::vector<Package>& pkgs);
 
 // Shell history: command name -> last run (unix seconds), 0 = run, but the history has no
 // timestamps (bash without HISTTIMEFORMAT, plain zsh). Reads zsh, bash and fish formats.

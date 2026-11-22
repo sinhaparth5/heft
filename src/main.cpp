@@ -143,6 +143,10 @@ int path() {
     auto t0 = Clock::now();
     auto [pkgs, errs] = scan_all();
     auto t1 = Clock::now();
+    for (int i = 0; i < int(pkgs.size()); ++i) // apt/pacman owners come from their manifests
+        for (auto& [_, f] : package_bins(pkgs[i], i, {}))
+            if (pkgs[i].ecosystem == "apt" || pkgs[i].ecosystem == "pacman")
+                pkgs[i].bins.push_back(f);
     auto v = scan_path(env_or("PATH", ""), pkgs);
     auto ms = ms_since(t1);
     size_t shadowed = 0, dangling = 0;

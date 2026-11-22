@@ -311,7 +311,8 @@ struct App {
                 auto old = std::ranges::find_if(
                     pkgs, [&](auto& o) { return o.ecosystem == c.eco && key(o) == key(p); });
                 if (old != pkgs.end())
-                    p.size = old->size, p.usage = old->usage, p.latest = old->latest;
+                    p.size = old->size, p.usage = old->usage, p.latest = old->latest,
+                    p.bins = old->bins;
                 next.push_back(std::move(p));
             }
         pkgs = std::move(next);
@@ -327,9 +328,14 @@ struct App {
                     const char* h = std::getenv("HOME");
                     hist = load_history(h ? h : "");
                 }
-                p.usage = bin_usage(package_bins(p, int(i), path), *hist);
+                auto bins = package_bins(p, int(i), path);
+                p.usage = bin_usage(bins, *hist);
+                if (p.root.empty())
+                    for (auto& [_, f] : bins)
+                        p.bins.push_back(f);
             }
         }
+        own_system_bins(path, pkgs);
     }
 
     uint64_t bytes_of(std::string_view e, bool caches_tab) const {
@@ -586,7 +592,7 @@ struct Ui {
         if (!p.bins.empty()) {
             std::string b;
             for (auto& s : p.bins)
-                b += (b.empty() ? "" : " ") + s;
+                b += (b.empty() ? "" : " ") + s.substr(s.rfind('/') + 1);
             kv.emplace_back("Bins", b);
         }
         sized(p.size);
@@ -867,7 +873,8 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
                            [&](Event e) { return ui.on_event(e, screen); });
 
     // Size workers. Results go back through screen.Post so the UI thread stays the only
-    // writer of App. Workers only read name/arch/root/bins/path, which never change.
+    // writer of App. Workers only read name/arch/root/path and
+    // cargo/go bins, which never change (apt/pacman bins arrive later, on the UI thread).
     // Rows on screen first (a.urgent), then packages and caches in order. claimed keeps
     // each item sized once whichever way a worker reached it.
     std::atomic<size_t> next{0};
@@ -936,9 +943,19 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
         const char* h = std::getenv("HOME");
         auto hist = load_history(h ? h : "");
         for (size_t i = 0; i < a.pkgs.size() && !st.stop_requested(); ++i, ++a.done) {
-            auto u = bin_usage(package_bins(a.pkgs[i], int(i), a.path), hist);
-            screen.Post([&a, i, u] { a.pkgs[i].usage = u; });
+            auto bins = package_bins(a.pkgs[i], int(i), a.path);
+            auto u = bin_usage(bins, hist);
+            std::vector<std::string> files; // apt/pacman: manifest bins, for PATH ownership
+            if (a.pkgs[i].root.empty())
+                for (auto& [_, f] : bins)
+                    files.push_back(f);
+            screen.Post([&a, i, u, files = std::move(files)] {
+                a.pkgs[i].usage = u;
+                if (!files.empty())
+                    a.pkgs[i].bins = files;
+            });
         }
+        screen.Post([&a] { own_system_bins(a.path, a.pkgs); });
     });
     if (updates)
         threads.emplace_back([&](std::stop_token st) {

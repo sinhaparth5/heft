@@ -29,7 +29,55 @@ std::string_view manager(std::string_view dir) {
     return {};
 }
 
+// pnpm's global bins are cmd-shim sh wrappers, not links. The real file is on a
+// "# cmd-shim-target=" line, or in `exec "$basedir/..."`; pn/pnpx exec the pnpm beside them.
+std::string wrapper_target(const std::string& file, int hops = 3) {
+    auto m = map_file(file.c_str());
+    if (!m || !m->text.starts_with("#!/bin/sh"))
+        return "";
+    auto t = m->text;
+    if (auto i = t.find("\n# cmd-shim-target="); i != t.npos) {
+        t.remove_prefix(i + 19);
+        return std::string{t.substr(0, t.find('\n'))};
+    }
+    for (std::string_view pre : {"exec \"$basedir/", "exec \"${self%/*}/"})
+        if (auto i = t.find(pre); i != t.npos) {
+            t.remove_prefix(i + pre.size());
+            auto next = file.substr(0, file.rfind('/') + 1) + std::string{t.substr(0, t.find('"'))};
+            auto deeper = hops ? wrapper_target(next, hops - 1) : "";
+            return deeper.empty() ? next : deeper;
+        }
+    return "";
+}
+
 } // namespace
+
+void own_system_bins(std::vector<PathEntry>& path, const std::vector<Package>& pkgs) {
+    std::unordered_map<std::string, std::string> dirs; // as written -> real (/bin is /usr/bin)
+    auto in_real_dir = [&](const std::string& dir, std::string_view name) {
+        auto [it, fresh] = dirs.try_emplace(dir);
+        if (fresh)
+            it->second = real(dir);
+        return it->second + "/" + std::string{name};
+    };
+    std::unordered_map<std::string, int> owner;
+    for (int i = 0; i < int(pkgs.size()); ++i)
+        if (pkgs[i].ecosystem == "apt" || pkgs[i].ecosystem == "pacman")
+            for (auto& f : pkgs[i].bins) {
+                auto slash = f.rfind('/');
+                owner.emplace(in_real_dir(f.substr(0, slash), f.substr(slash + 1)), i);
+            }
+    // The manifest lists the file where it sits, or where its link (alternatives, uutils) leads.
+    for (auto& e : path) {
+        if (e.pkg >= 0 || e.shim)
+            continue;
+        auto it = owner.find(in_real_dir(e.dir, e.name));
+        if (it == owner.end())
+            it = owner.find(e.target);
+        if (it != owner.end())
+            e.pkg = it->second, e.owner = pkgs[e.pkg].ecosystem;
+    }
+}
 
 std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Package>& pkgs) {
     // Ownership: cargo/go roots are a shared bin dir, so match root/<bin> exactly; every
@@ -85,16 +133,18 @@ std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Pa
                                 ::access(full.c_str(), X_OK) != 0))
                 continue; // not an executable file (data, dirs, helpers)
 
-            if (auto it = exact.find(e.target); it != exact.end())
-                e.pkg = it->second;
-            else {
+            auto own = [&](const std::string& file) {
+                if (auto it = exact.find(file); it != exact.end())
+                    return e.pkg = it->second, void();
                 size_t best = 0;
                 for (auto& [root, i] : roots)
-                    if (root.size() > best && under(e.target, root))
+                    if (root.size() > best && under(file, root))
                         best = root.size(), e.pkg = i;
-            }
-            // ponytail: pnpm's PNPM_HOME/bin entries are wrapper scripts, not links, so they
-            // stay "other"; reading the script for its target is the upgrade path.
+            };
+            own(e.target);
+            if (e.pkg < 0 && !e.dangling && !system_dir && mgr.empty())
+                if (auto w = wrapper_target(full); !w.empty())
+                    own(real(w));
             e.owner = e.pkg >= 0                  ? pkgs[e.pkg].ecosystem
                       : !mgr.empty()              ? mgr
                       : system_dir && system_pkgs ? std::string_view{"system"}
@@ -106,5 +156,6 @@ std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Pa
             out.push_back(std::move(e));
         }
     }
+    own_system_bins(out, pkgs);
     return out;
 }
