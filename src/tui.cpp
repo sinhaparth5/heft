@@ -143,8 +143,8 @@ struct App {
     bool rev = false;
     std::string filter;
     bool filtering = false;
-    std::string eco; // "" = all
-    bool keys = true;
+    std::string eco;         // "" = all
+    bool help = false;       // ?: every key in a popup
     bool focus_eco = false;  // Tab: j/k move through the Ecosystems pane instead of the table
     bool picking = false;    // e: ecosystem popup open
     std::string picked_from; // eco before the popup opened; Esc restores it
@@ -488,8 +488,10 @@ struct Ui {
         e.push_back(filler());
         uint64_t total = a.bytes_of("", 0) + a.bytes_of("", 1);
         e.push_back(text(std::format(" {} ", human_size(total))) | bgcolor(P.bg_alt));
-        e.push_back(text(" "));
-        e.push_back(text(std::format(" {} ecosystems ", a.providers)) | bgcolor(P.bg_alt));
+        if (Terminal::Size().dimx >= 100) { // 80 cols: five tabs + total only
+            e.push_back(text(" "));
+            e.push_back(text(std::format(" {} ecosystems ", a.providers)) | bgcolor(P.bg_alt));
+        }
         if (size_t d = a.done; d < a.total) {
             static constexpr std::string_view spin[] = {"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"};
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -757,17 +759,49 @@ struct Ui {
         return pane("Details", text(s));
     }
 
-    Element keys() const {
-        std::pair<std::string_view, std::string_view> hints[] = {
-            {"/", "Filter"},    {"s", "Sort"},  {"S", "Reverse"},    {"e", "Ecosystem"},
-            {"u", "Uninstall"}, {"p", "Purge"}, {"t", "Start/stop"}, {"Tab", "Focus"},
-            {"?", "Hide keys"}, {"q", "Quit"}};
+    // Every key, for the ? popup. The Keys bar shows as many as fit, ? first.
+    static constexpr std::pair<std::string_view, std::string_view> kKeys[] = {
+        {"?", "Keys"},
+        {"/", "Filter"},
+        {"u", "Uninstall / remove"},
+        {"p", "Purge cache"},
+        {"t", "Start/stop container"},
+        {"e", "Ecosystem"},
+        {"s", "Sort"},
+        {"S", "Reverse"},
+        {"q", "Quit"},
+        {"1-5", "Tabs"},
+        {"j k ↑ ↓", "Move"},
+        {"PgUp PgDn", "Page"},
+        {"g G", "Top / bottom"},
+        {"Tab", "Focus pane"},
+        {"Esc", "Clear filter"},
+        {"mouse", "Click tab/row, wheel scrolls"}};
+
+    Element keys(int width) const {
         Elements e;
-        for (auto [k, what] : hints) {
+        int used = 2; // borders
+        for (auto [k, what] : kKeys) {
+            auto label = what.substr(0, what.find(' ')); // "Uninstall / remove" -> "Uninstall"
+            int w = int(k.size() + label.size()) + 7;    // "  k " + "→ label  "
+            if (k.size() > 1 || (used += w) > width)
+                break; // single-letter keys only; multi-key rows live in the popup
             e.push_back(text(std::format("  {} ", k)) | bold | color(P.accent));
-            e.push_back(text(std::format("→ {}  ", what)));
+            e.push_back(text(std::format("→ {}  ", label)));
         }
         return pane("Keys", hbox(std::move(e)));
+    }
+
+    Element help() const {
+        Elements lines;
+        for (auto [k, what] : kKeys)
+            lines.push_back(hbox({text(std::format(" {:>9} ", k)) | bold | color(P.accent),
+                                  text(std::string{what} + " ")}));
+        lines.push_back(text(""));
+        lines.push_back(text(" any key closes ") | color(P.fg_dim) | center);
+        return window(text(" Keys ") | bold | color(P.accent),
+                      vbox(std::move(lines)) | color(P.fg)) |
+               color(P.accent) | bgcolor(P.bg) | clear_under | center;
     }
 
     Element status_line() const {
@@ -812,7 +846,7 @@ struct Ui {
         {
             int table_w = w - (left ? 26 : 0) - (right ? 38 : 0) - 2;
             // top bar, header row, borders, status, + keys/strip panes
-            int table_h = h - 5 - (a.keys ? 3 : 0) - (right ? 0 : 3);
+            int table_h = h - 5 - 3 - (right ? 0 : 3);
             Elements cols;
             if (left)
                 cols.push_back(ecosystems());
@@ -825,10 +859,11 @@ struct Ui {
         Elements page{top_bar(), body};
         if (!right)
             page.push_back(details_strip());
-        if (a.keys)
-            page.push_back(keys());
+        page.push_back(keys(w));
         page.push_back(status_line());
         auto screen = vbox(std::move(page)) | bgcolor(P.bg) | color(P.fg);
+        if (a.help)
+            return dbox({screen, help()});
         if (a.picking)
             return dbox({screen, window(text(" Ecosystem ") | bold | color(P.accent),
                                         eco_lines() | color(P.fg) | size(WIDTH, EQUAL, 24)) |
@@ -856,6 +891,11 @@ struct Ui {
     }
 
     bool on_event(Event e, ScreenInteractive& screen) {
+        if (a.help) { // any key or click closes; ticks and mouse moves don't
+            if (e == Event::Custom || (e.is_mouse() && e.mouse().motion != Mouse::Pressed))
+                return false;
+            return a.help = false, true;
+        }
         if (a.confirm) { // modal: y runs, anything else that's a key cancels
             if (e == Event::Custom || e.is_mouse())
                 return false;
@@ -931,7 +971,7 @@ struct Ui {
         if (key('S'))
             return a.rev = !a.rev, true;
         if (key('?'))
-            return a.keys = !a.keys, true;
+            return a.help = true, true;
         if (key('u') || key('p'))
             return a.ask(key('p')), true;
         if (key('t'))
