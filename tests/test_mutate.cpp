@@ -24,6 +24,11 @@ int main() {
     apt.arch = "all";
     assert(uninstall_argv(apt).back() == "libc6");
 
+    // brew: the version opt/ links to is uninstalled; an older keg is cleaned up instead.
+    auto brew = *scan_brew(FIXTURES "/brew");
+    assert((uninstall_argv(brew[1]) == V{"brew", "uninstall", "jq"})); // 1.7.1, linked
+    assert((uninstall_argv(brew[0]) == V{"brew", "cleanup", "jq"}));   // 1.6
+
     Package go;
     go.ecosystem = "go", go.name = "gopls";
     assert(uninstall_argv(go).empty()); // no native command; pkgtop won't rm it

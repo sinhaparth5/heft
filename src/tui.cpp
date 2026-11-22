@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <mutex>
+#include <numeric>
 #include <print>
 #include <ranges>
 #include <thread>
@@ -146,7 +147,18 @@ struct App {
 
     // Unsized rows on screen, sized before the rest. Written by render, popped by workers.
     std::mutex urgent_mu;
-    std::vector<size_t> urgent; // pkgs index, or pkgs.size() + caches index
+    std::vector<size_t> urgent; // snapshot index, or snapshot size + caches index
+    // Held while a child owns the terminal: FTXUI drops (and races on) Posts made then, so
+    // background threads post under it and wait.
+    std::mutex io_mu;
+
+    // Workers read a snapshot of pkgs taken at startup and report by snapshot index. A
+    // rescan reorders pkgs, so results go through where (-1: row gone) and
+    // render asks for rows through origin (npos: not in the snapshot).
+    std::vector<int> where;
+    std::vector<size_t> origin;
+    // When each cache was last purged; a size walk that started earlier is stale.
+    std::vector<std::chrono::steady_clock::time_point> purged;
 
     std::function<std::vector<Package>()> rescan;
     std::optional<Confirm> confirm;
@@ -270,13 +282,11 @@ struct App {
     // u / p: build the command and open the modal, or say why not.
     void ask(bool purge) {
         auto i = selected();
-        if (!i || (purge ? tab != 1 : tab != 0 && tab != 3))
+        if (!i || (purge ? tab != 1 : tab == 1))
             return say(purge ? "p purges a cache: switch to Caches (2)"
-                             : "u uninstalls a package: switch to Packages (1) or Stale (4)",
+                             : "u uninstalls a package: switch to Packages (1), PATH (3) or "
+                               "Stale (4)",
                        false);
-        // Workers index into pkgs/caches; changing them mid-flight would race.
-        if (done < total)
-            return say("wait for loading to finish", false);
         if (purge) {
             auto& c = caches[*i];
             auto argv = purge_argv(c);
@@ -286,6 +296,13 @@ struct App {
                 Confirm{"Purge " + std::string{c.ecosystem} + " cache",
                         c.size ? "~" + human_size(c.size->bytes) : "unknown", argv, c.ecosystem, i};
             return;
+        }
+        if (tab == 2) {
+            if (path[*i].pkg < 0)
+                return say(path[*i].name + " has no owning package" +
+                               (done < total ? " (still loading)" : ""),
+                           false);
+            i = path[*i].pkg;
         }
         auto& p = pkgs[*i];
         if (p.essential)
@@ -304,30 +321,39 @@ struct App {
     // if a command ever adds many.
     void refresh(const Confirm& c) {
         if (c.cache) {
+            purged[*c.cache] = std::chrono::steady_clock::now();
             caches[*c.cache].size = disk_usage(caches[*c.cache].path.c_str());
             return;
         }
         auto key = [](const Package& p) { return std::tie(p.name, p.version, p.root); };
         std::vector<Package> next;
-        for (auto& p : pkgs)
-            if (p.ecosystem != c.eco)
-                next.push_back(std::move(p));
+        std::vector<size_t> from; // origin of each row in next
+        for (size_t i = 0; i < pkgs.size(); ++i)
+            if (pkgs[i].ecosystem != c.eco)
+                next.push_back(std::move(pkgs[i])), from.push_back(origin[i]);
         size_t kept = next.size();
         for (auto& p : rescan())
             if (p.ecosystem == c.eco) {
                 auto old = std::ranges::find_if(
                     pkgs, [&](auto& o) { return o.ecosystem == c.eco && key(o) == key(p); });
+                from.push_back(old != pkgs.end() ? origin[old - pkgs.begin()] : size_t(-1));
                 if (old != pkgs.end())
                     p.size = old->size, p.usage = old->usage, p.latest = old->latest,
                     p.bins = old->bins;
                 next.push_back(std::move(p));
             }
-        pkgs = std::move(next);
+        pkgs = std::move(next), origin = std::move(from);
+        std::ranges::fill(where, -1);
+        for (size_t i = 0; i < origin.size(); ++i)
+            if (origin[i] != size_t(-1))
+                where[origin[i]] = int(i);
         const char* env = std::getenv("PATH");
         path = scan_path(env ? env : "", pkgs);
         std::optional<History> hist, npm;
         for (size_t i = kept; i < pkgs.size(); ++i) {
             auto& p = pkgs[i];
+            if (origin[i] != size_t(-1))
+                continue; // survived the rescan: a worker result is still on its way if unset
             if (!p.size)
                 p.size = package_size(p);
             if (!p.usage) {
@@ -506,8 +532,9 @@ struct Ui {
 
         for (int k = top; k < std::min<int>(top + h, v.size()); ++k) {
             auto r = a.row(v[k]);
-            if (r.size && !*r.size)
-                unsized.insert(unsized.begin(), a.tab == 1 ? a.pkgs.size() + v[k] : v[k]);
+            if (r.size && !*r.size && (a.tab == 1 || a.origin[v[k]] != size_t(-1)))
+                unsized.insert(unsized.begin(),
+                               a.tab == 1 ? a.where.size() + v[k] : a.origin[v[k]]);
             auto [c1, c2, c3] = cols(r.name, r.second, r.eco,
                                      r.bin ? flags(*r.bin) : size_cell(*r.size), caches, r.last);
             bool selected = k == pos;
@@ -750,6 +777,7 @@ struct Ui {
             if (e != Event::Character('y'))
                 return true;
             int rc = 0;
+            std::lock_guard io{a.io_mu};
             screen.WithRestoredIO([&] {
                 std::println("$ {}", join(c->argv));
                 std::fflush(stdout);
@@ -856,6 +884,11 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     a.caches = std::move(caches);
     a.path = std::move(path);
     a.errors = std::move(errors);
+    const std::vector<Package> snap = a.pkgs; // what workers read; see App::where
+    const std::vector<PathEntry> snap_path = a.path;
+    a.where.resize(snap.size()), a.origin.resize(snap.size());
+    std::iota(a.where.begin(), a.where.end(), 0), std::iota(a.origin.begin(), a.origin.end(), 0);
+    a.purged.resize(a.caches.size());
     auto seen = [&](std::string_view e) {
         if (std::ranges::find(a.ecos, e) == a.ecos.end())
             a.ecos.push_back(e);
@@ -885,8 +918,8 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
                            [&](Event e) { return ui.on_event(e, screen); });
 
     // Size workers. Results go back through screen.Post so the UI thread stays the only
-    // writer of App. Workers only read name/arch/root/path and
-    // cargo/go bins, which never change (apt/pacman bins arrive later, on the UI thread).
+    // writer of App. Workers read snap and cache paths, which never change, so u/p can
+    // rescan pkgs mid-load.
     // Rows on screen first (a.urgent), then packages and caches in order. claimed keeps
     // each item sized once whichever way a worker reached it.
     std::atomic<size_t> next{0};
@@ -906,6 +939,10 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
             if (auto it = old.find(cache_key(c)); it != old.end())
                 c.size = it->second;
     }
+    auto post = [&](auto task) {
+        std::lock_guard l{a.io_mu};
+        screen.Post(std::move(task));
+    };
     auto take = [&]() -> std::optional<size_t> {
         {
             std::lock_guard l{a.urgent_mu};
@@ -924,14 +961,20 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     auto worker = [&](std::stop_token st) {
         for (std::optional<size_t> j; !st.stop_requested() && (j = take()); ++a.done) {
             size_t i = *j;
-            if (i < a.pkgs.size()) {
-                auto& p = a.pkgs[i];
-                auto u = package_size(p);
-                screen.Post([&a, i, u] { a.pkgs[i].size = u; });
+            if (i < snap.size()) {
+                auto u = package_size(snap[i]);
+                post([&a, i, u] {
+                    if (a.where[i] >= 0)
+                        a.pkgs[a.where[i]].size = u;
+                });
             } else {
-                size_t c = i - a.pkgs.size();
-                auto u = disk_usage(a.caches[c].path.c_str());
-                screen.Post([&a, c, u] { a.caches[c].size = u; });
+                size_t c = i - snap.size();
+                auto t0 = std::chrono::steady_clock::now();
+                auto u = disk_usage(a.caches[c].path.c_str()); // path never changes
+                post([&a, c, u, t0] {
+                    if (a.purged[c] < t0)
+                        a.caches[c].size = u;
+                });
             }
         }
     };
@@ -940,9 +983,9 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     auto ticker = [&](std::stop_token st) {
         while (!st.stop_requested() && a.done < a.total) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            screen.PostEvent(Event::Custom);
+            post(Event::Custom);
         }
-        screen.PostEvent(Event::Custom);
+        post(Event::Custom);
     };
 
     // Declared after screen/App so they are joined (on scope exit) before those die.
@@ -955,28 +998,34 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
         const char* h = std::getenv("HOME");
         auto hist = load_history(h ? h : "");
         auto npm = load_npm_cache(h ? h : "");
-        for (size_t i = 0; i < a.pkgs.size() && !st.stop_requested(); ++i, ++a.done) {
-            auto bins = package_bins(a.pkgs[i], int(i), a.path);
-            auto u = bin_usage(bins, hist, npm_activity(a.pkgs[i], npm));
+        for (size_t i = 0; i < snap.size() && !st.stop_requested(); ++i, ++a.done) {
+            auto bins = package_bins(snap[i], int(i), snap_path);
+            auto u = bin_usage(bins, hist, npm_activity(snap[i], npm));
             std::vector<std::string> files; // apt/pacman: manifest bins, for PATH ownership
-            if (a.pkgs[i].root.empty())
+            if (snap[i].root.empty())
                 for (auto& [_, f] : bins)
                     files.push_back(f);
-            screen.Post([&a, i, u, files = std::move(files)] {
-                a.pkgs[i].usage = u;
+            post([&a, i, u, files = std::move(files)] {
+                if (a.where[i] < 0)
+                    return;
+                auto& p = a.pkgs[a.where[i]];
+                p.usage = u;
                 if (!files.empty())
-                    a.pkgs[i].bins = files;
+                    p.bins = files;
             });
         }
-        screen.Post([&a] {
+        post([&a] {
             own_system_bins(a.path, a.pkgs);
             dependents_usage(a.pkgs);
         });
     });
     if (updates)
         threads.emplace_back([&](std::stop_token st) {
-            check_updates(a.pkgs, st, [&](size_t i, std::string v) {
-                screen.Post([&a, i, v] { a.pkgs[i].latest = v; });
+            check_updates(snap, st, [&](size_t i, std::string v) {
+                post([&a, i, v] {
+                    if (a.where[i] >= 0)
+                        a.pkgs[a.where[i]].latest = v;
+                });
                 ++a.done;
             });
         });

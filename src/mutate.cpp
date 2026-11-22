@@ -1,8 +1,10 @@
 #include "pkgtop.hpp"
 
+#include <climits>
 #include <csignal>
 #include <spawn.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 extern char** environ;
 
@@ -15,10 +17,19 @@ std::vector<std::string> uninstall_argv(const Package& p) {
                 p.arch.empty() || p.arch == "all" ? p.name : p.name + ":" + p.arch};
     if (e == "pacman")
         return {"sudo", "pacman", "-R", p.name};
-    // ponytail: removes the linked version; other Cellar versions of the same formula need
-    // `brew uninstall --force`, add it when rows per version get their own action.
-    if (e == "brew")
-        return {"brew", "uninstall", p.name};
+    // `brew uninstall` removes the version opt/<name> points at, whatever row was picked, and
+    // `--force` removes every version. Any other version is an old keg: `brew cleanup` drops
+    // those and keeps the one in use. ponytail: cleanup drops all old kegs of the formula,
+    // not just this row's.
+    if (e == "brew") {
+        auto at = p.root.rfind("/Cellar/");
+        char buf[PATH_MAX];
+        auto n = at == p.root.npos ? -1
+                                   : ::readlink((p.root.substr(0, at) + "/opt/" + p.name).c_str(),
+                                                buf, sizeof buf);
+        bool current = n <= 0 || std::string_view{buf, size_t(n)}.ends_with("/" + p.version);
+        return {"brew", current ? "uninstall" : "cleanup", p.name};
+    }
     if (e == "cargo")
         return {"cargo", "uninstall", p.name};
     if (e == "uv")

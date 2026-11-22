@@ -11,12 +11,15 @@
 - PATH ownership: pnpm's global bins (wrapper scripts) are traced to their package, and binaries in system dirs show the apt/pacman package that installed them instead of `system` (filled in once manifests are read).
 - LAST ACTIVE column on the Packages tab (when the terminal is wide enough).
 - apt/pacman libraries (no binaries, installed as a dependency) get a last-used time from the packages that depend on them, so they show up on the Stale tab and in `--stale`. A library nothing depends on, or whose dependents are all unused, counts as unused since install.
+- `u` on the PATH tab uninstalls the package that owns the binary.
 - npm's cache index is used as weak evidence of use for npm/pnpm globals: a registry fetch after install (npx, a project install) counts as use when nothing better is known.
 
 ### Changed
 - Rows on screen are sized first, so they no longer wait behind a huge cache or store.
+- `u` and `p` no longer wait for loading to finish; sizing pauses while the command runs and picks up after.
 
 ### Fixed
+- `u` on an older Homebrew version runs `brew cleanup <name>` instead of `brew uninstall <name>`, which removed the version in use rather than the selected one.
 - Versions are now compared properly (epochs, numeric parts, pre-releases), so an installed version newer than the registry's latest no longer shows as outdated.
 
 ## [2026.11.3] - 2026-11-21
