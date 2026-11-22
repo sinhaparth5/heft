@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [2026.11.6] - 2026-11-22
 ### Added
 - `?` opens a popup with every key.
 
