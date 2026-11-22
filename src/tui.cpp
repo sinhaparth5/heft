@@ -77,6 +77,7 @@ struct Row {
     std::string second; // version (packages), file count (caches) or "#rank dir" (PATH)
     const std::optional<DiskUsage>* size; // null on the PATH tab
     const PathEntry* bin = nullptr;       // PATH tab only
+    std::string last{};                   // Packages tab: last active
 };
 
 // PATH flags: ⚠ shadowed, ↯ shim, ✗ broken.
@@ -158,7 +159,8 @@ struct App {
     int64_t now = std::time(nullptr);
 
     size_t count() const { return tab == 2 ? path.size() : tab == 1 ? caches.size() : pkgs.size(); }
-    // Stale lists packages whose use can be told (they have binaries), minus essential ones.
+    // Stale lists packages whose use can be told (binaries, or apt/pacman dependents), minus
+    // essential ones.
     bool in_tab(size_t i) const {
         return tab != 3 ||
                (pkgs[i].usage && pkgs[i].usage->conf != Usage::none && !pkgs[i].essential);
@@ -177,7 +179,12 @@ struct App {
         auto& p = pkgs[i];
         if (tab == 3)
             return {p.ecosystem, p.name, p.usage ? last_active(*p.usage, now) : "", &p.size};
-        return {p.ecosystem, p.name, outdated(p) ? p.version + " ↑" : p.version, &p.size};
+        return {p.ecosystem,
+                p.name,
+                outdated(p) ? p.version + " ↑" : p.version,
+                &p.size,
+                nullptr,
+                p.usage && p.usage->conf != Usage::none ? last_active(*p.usage, now) : ""};
     }
 
     // Filtered + sorted indices for the current tab. Rebuilt per frame: ~3k rows is < 1 ms.
@@ -318,7 +325,7 @@ struct App {
         pkgs = std::move(next);
         const char* env = std::getenv("PATH");
         path = scan_path(env ? env : "", pkgs);
-        std::optional<History> hist;
+        std::optional<History> hist, npm;
         for (size_t i = kept; i < pkgs.size(); ++i) {
             auto& p = pkgs[i];
             if (!p.size)
@@ -326,16 +333,17 @@ struct App {
             if (!p.usage) {
                 if (!hist) {
                     const char* h = std::getenv("HOME");
-                    hist = load_history(h ? h : "");
+                    hist = load_history(h ? h : ""), npm = load_npm_cache(h ? h : "");
                 }
                 auto bins = package_bins(p, int(i), path);
-                p.usage = bin_usage(bins, *hist);
+                p.usage = bin_usage(bins, *hist, npm_activity(p, *npm));
                 if (p.root.empty())
                     for (auto& [_, f] : bins)
                         p.bins.push_back(f);
             }
         }
         own_system_bins(path, pkgs);
+        dependents_usage(pkgs);
     }
 
     uint64_t bytes_of(std::string_view e, bool caches_tab) const {
@@ -466,28 +474,32 @@ struct Ui {
         bool caches = a.tab == 1, bins = a.tab == 2, stale = a.tab == 3;
         int second_w = caches ? 9 : bins ? std::clamp(width / 3, 16, 40) : 16;
         int name_w = width - (1 + 1 + second_w + 1 + 6 + 1 + 7 + 1);
+        int last_w = a.tab == 0 && name_w >= 16 + 13 ? 12 : 0; // LAST ACTIVE, when there's room
+        name_w -= last_w ? last_w + 1 : 0;
         if (name_w < 16) // narrow: VERSION goes first
             name_w += second_w + 1, second_w = 0;
 
         auto cols = [&](std::string_view name, std::string_view second, std::string_view eco,
-                        std::string_view size, bool right_second) {
+                        std::string_view size, bool right_second, std::string_view last = "") {
             auto s2 = second_w ? (right_second
                                       ? std::format("{:>{}} ", second, second_w)
                                       : std::format("{:<{}} ", trunc(second, second_w), second_w))
                                : "";
+            if (last_w)
+                s2 += std::format("{:<{}} ", trunc(last, last_w), last_w);
             return std::tuple{std::format(" {:<{}} {}", trunc(name, name_w), name_w, s2),
                               std::format("{:<6} ", trunc(eco, 6)), std::format("{:>7} ", size)};
         };
 
         auto sort_mark = [&](int col) { return a.sort == col ? (a.rev ? "▲" : "▼") : ""; };
-        auto [h1, h2, h3] =
-            cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
-                 caches  ? "FILES"
-                 : bins  ? std::format("DIR{}", sort_mark(0))
-                 : stale ? "LAST ACTIVE"
-                         : "VERSION",
-                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
-                 bins ? "FLAGS" : std::format("SIZE{}", stale ? "" : sort_mark(0)), caches);
+        auto [h1, h2, h3] = cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
+                                 caches  ? "FILES"
+                                 : bins  ? std::format("DIR{}", sort_mark(0))
+                                 : stale ? "LAST ACTIVE"
+                                         : "VERSION",
+                                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
+                                 bins ? "FLAGS" : std::format("SIZE{}", stale ? "" : sort_mark(0)),
+                                 caches, "LAST ACTIVE");
         auto header = hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt);
         Elements rows;
         std::vector<size_t> unsized; // bottom row first: workers pop from the back
@@ -496,8 +508,8 @@ struct Ui {
             auto r = a.row(v[k]);
             if (r.size && !*r.size)
                 unsized.insert(unsized.begin(), a.tab == 1 ? a.pkgs.size() + v[k] : v[k]);
-            auto [c1, c2, c3] =
-                cols(r.name, r.second, r.eco, r.bin ? flags(*r.bin) : size_cell(*r.size), caches);
+            auto [c1, c2, c3] = cols(r.name, r.second, r.eco,
+                                     r.bin ? flags(*r.bin) : size_cell(*r.size), caches, r.last);
             bool selected = k == pos;
             auto eco = text(c2);
             auto sz = text(c3);
@@ -942,9 +954,10 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     threads.emplace_back([&](std::stop_token st) {
         const char* h = std::getenv("HOME");
         auto hist = load_history(h ? h : "");
+        auto npm = load_npm_cache(h ? h : "");
         for (size_t i = 0; i < a.pkgs.size() && !st.stop_requested(); ++i, ++a.done) {
             auto bins = package_bins(a.pkgs[i], int(i), a.path);
-            auto u = bin_usage(bins, hist);
+            auto u = bin_usage(bins, hist, npm_activity(a.pkgs[i], npm));
             std::vector<std::string> files; // apt/pacman: manifest bins, for PATH ownership
             if (a.pkgs[i].root.empty())
                 for (auto& [_, f] : bins)
@@ -955,7 +968,10 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
                     a.pkgs[i].bins = files;
             });
         }
-        screen.Post([&a] { own_system_bins(a.path, a.pkgs); });
+        screen.Post([&a] {
+            own_system_bins(a.path, a.pkgs);
+            dependents_usage(a.pkgs);
+        });
     });
     if (updates)
         threads.emplace_back([&](std::stop_token st) {

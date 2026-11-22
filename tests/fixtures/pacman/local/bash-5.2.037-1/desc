@@ -15,5 +15,5 @@ x86_64
 
 %DEPENDS%
 glibc
-readline
+readline>=8.0
 

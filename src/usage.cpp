@@ -140,10 +140,11 @@ std::vector<Bin> package_bins(const Package& p, int index, std::span<const PathE
     return out;
 }
 
-Usage bin_usage(std::span<const Bin> bins, const History& h) {
+Usage bin_usage(std::span<const Bin> bins, const History& h, int64_t activity) {
     Usage u;
+    Usage seen{activity, Usage::low, "npm cache", true};
     if (bins.empty())
-        return u; // libraries, data packages: no way to tell
+        return activity ? seen : u; // libraries, data packages: no way to tell
     int64_t hist = 0, atime = 0, installed = 0;
     bool untimed = false;
     for (auto& [name, file] : bins) {
@@ -168,7 +169,114 @@ Usage bin_usage(std::span<const Bin> bins, const History& h) {
         u = {installed, Usage::low, "shell history (no time)", true};
     else
         u = {installed, Usage::low, "never seen; install time", false};
-    return u;
+    return u.conf == Usage::low && activity > u.last ? seen : u;
+}
+
+void parse_npm_index(std::string_view text, History& out) {
+    // "<sha1>\t{"key":"make-fetch-happen:request-cache:https://registry.npmjs.org/@a%2fb",
+    // ..."time":1783771436389,...}", one line per write. Tarballs: <host>/<name>/-/<file>.tgz.
+    // ponytail: assumes the registry sits at the host root (not artifactory's /api/npm/x/).
+    static constexpr std::string_view tag = "request-cache:", time = "\"time\":";
+    for (size_t at = 0; (at = text.find(tag, at)) != text.npos;) {
+        auto url = text.substr(at += tag.size());
+        url = url.substr(0, url.find('"'));
+        auto host = url.find("//");
+        auto path = url.substr(std::min(url.size(), url.find('/', host + 2) + 1));
+        path = path.substr(0, path.find("/-/"));
+        std::string name{path};
+        if (auto pct = name.find("%2"); pct != name.npos && (name[pct + 2] | 32) == 'f')
+            name.replace(pct, 3, "/");
+        auto t = text.find(time, at);
+        if (t == text.npos)
+            break;
+        if (!name.empty())
+            note(out, name, number(text.substr(t + time.size(), 20)) / 1000);
+    }
+}
+
+History load_npm_cache(const std::string& home) {
+    const char* c = std::getenv("npm_config_cache");
+    auto index = (c && *c ? std::string{c} : home + "/.npm") + "/_cacache/index-v5";
+    History h;
+    for (auto& a : list_dir(index)) // index-v5/xx/yy/<rest of the hash>
+        for (auto& b : list_dir(index + "/" + a))
+            for (auto& f : list_dir(index + "/" + a + "/" + b))
+                if (auto m = map_file((index + "/" + a + "/" + b + "/" + f).c_str()); m)
+                    parse_npm_index(m->text, h);
+    return h;
+}
+
+int64_t npm_activity(const Package& p, const History& npm) {
+    auto it = npm.find(p.name);
+    return (p.ecosystem == "npm" || p.ecosystem == "pnpm") && it != npm.end() ? it->second : 0;
+}
+
+void dependents_usage(std::vector<Package>& pkgs, const char* info_dir,
+                      const std::string& local_dir) {
+    auto managed = [](const Package& p) { return p.ecosystem == "apt" || p.ecosystem == "pacman"; };
+    std::unordered_map<std::string_view, std::vector<size_t>> by_name; // real or provided name
+    for (size_t i = 0; i < pkgs.size(); ++i)
+        if (managed(pkgs[i])) {
+            by_name[pkgs[i].name].push_back(i);
+            for (auto& v : pkgs[i].provides)
+                by_name[v].push_back(i);
+        }
+    std::vector<std::vector<size_t>> rdeps(pkgs.size());
+    for (size_t i = 0; i < pkgs.size(); ++i)
+        for (auto& d : pkgs[i].deps)
+            if (auto it = by_name.find(d); it != by_name.end())
+                for (auto j : it->second)
+                    if (j != i && pkgs[j].ecosystem == pkgs[i].ecosystem)
+                        rdeps[j].push_back(i);
+
+    // Libraries: no binaries (or set by an earlier run: refresh re-runs this). Explicit installs
+    // without binaries are apps living elsewhere (/opt, /usr/share): still can't tell those.
+    std::vector<size_t> libs;
+    std::vector<char> lib(pkgs.size());
+    for (size_t j = 0; j < pkgs.size(); ++j)
+        if (auto& u = pkgs[j].usage;
+            managed(pkgs[j]) && pkgs[j].automatic && u &&
+            (u->conf == Usage::none || u->source.starts_with("dependents")))
+            libs.push_back(j), lib[j] = 1, u = Usage{};
+    // A use only ever moves later, so this settles; each pass reaches one level deeper.
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (auto j : libs) {
+            int64_t last = 0;
+            for (auto i : rdeps[j])
+                if (auto& u = pkgs[i].usage; u && u->used)
+                    last = std::max(last, u->last);
+            if (last > pkgs[j].usage->last)
+                pkgs[j].usage = Usage{last, Usage::low, "dependents: used", true}, changed = true;
+        }
+    }
+    // Unknown spreads the same way: a dependent we can't tell about, or an unknown library.
+    std::vector<char> unknown(pkgs.size());
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (auto j : libs)
+            if (!pkgs[j].usage->used && !unknown[j])
+                for (auto i : rdeps[j])
+                    if (auto& u = pkgs[i].usage;
+                        lib[i] ? unknown[i] : !u || u->conf == Usage::none) {
+                        unknown[j] = changed = true;
+                        break;
+                    }
+    }
+    for (auto j : libs) {
+        auto& p = pkgs[j];
+        if (p.usage->used || unknown[j])
+            continue;
+        // Install time: dpkg rewrites name.list, pacman the desc, on every install or upgrade.
+        auto f = p.ecosystem == "apt" ? std::string{info_dir} + "/" + p.name + ".list"
+                                      : local_dir + "/" + p.name + "-" + p.version + "/desc";
+        struct stat st;
+        if (::stat(f.c_str(), &st) != 0 && p.ecosystem == "apt")
+            f = std::string{info_dir} + "/" + p.name + ":" + p.arch + ".list";
+        int64_t installed = ::stat(f.c_str(), &st) == 0 ? st.st_mtime : 0;
+        p.usage = Usage{installed, Usage::low,
+                        rdeps[j].empty() ? "dependents: none" : "dependents: unused", false};
+    }
 }
 
 std::string ago(int64_t ts, int64_t now) {

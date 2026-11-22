@@ -29,6 +29,12 @@ Package parse_pacman_desc(std::string_view text) {
             p.version = v;
         else if (sec == "%ARCH%")
             p.arch = v;
+        else if (sec == "%REASON%") // 1 = installed as a dependency
+            p.automatic = v == "1";
+        else if (sec == "%DEPENDS%") // "bash>=5", "libfoo.so=1-64"
+            p.deps.emplace_back(v.substr(0, v.find_first_of("<>=")));
+        else if (sec == "%PROVIDES%")
+            p.provides.emplace_back(v.substr(0, v.find_first_of("<>=")));
     });
     // ponytail: no Essential flag; pacman itself refuses to remove packages others depend on
     // (glibc, systemd, ...). Read the `base` group/%REASON% if that proves not enough.

@@ -1,0 +1,7 @@
+Package: ripgrep
+Architecture: amd64
+Auto-Installed: 1
+
+Package: bash
+Architecture: amd64
+Auto-Installed: 0

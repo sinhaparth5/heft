@@ -15,6 +15,8 @@ Version: 1.0
 Package: ripgrep
 Status: hold ok installed
 Version: 14.1.1-1
+Depends: libc6 (>= 2.34), libpcre2-8-0:amd64 | libpcre2-alt
+Provides: rg (= 14)
 Conffiles:
  /etc/foo 0123456789abcdef
 

@@ -42,10 +42,13 @@ struct Package {
     std::string root;                  // install root; empty when files are scattered (apt)
     std::vector<std::string> bins;     // exposed executables; apt/pacman: manifest paths, late
     bool essential = false;            // never offer uninstall
+    bool automatic = false;            // apt/pacman: pulled in as a dependency
     std::string arch;                  // apt only: locates name:arch.list for Multi-Arch packages
     std::optional<DiskUsage> size;     // filled in later, never during scan
     std::optional<Usage> usage;        // likewise
     std::string module;                // go only: main module path, for the proxy lookup
+    std::vector<std::string> deps;     // apt/pacman: names it depends on (and recommends)
+    std::vector<std::string> provides; // apt/pacman: virtual names it satisfies
     std::optional<std::string> latest; // registry's latest version ("" = lookup failed)
 };
 
@@ -97,9 +100,11 @@ std::string_view json_get(std::string_view object, std::string_view key);
 using ScanResult = std::expected<std::vector<Package>, std::string>;
 
 // dpkg: /var/lib/dpkg/status. Missing file = not a Debian system = empty, not an error.
-// index = apt's Packages lists (same format, no Status field): keep every entry.
+// index = apt's Packages lists or extended_states (no Status field): keep every entry.
+// states: apt's Auto-Installed marks, for Package::automatic.
 std::vector<Package> parse_dpkg_status(std::string_view text, bool index = false);
-ScanResult scan_dpkg(const char* path = "/var/lib/dpkg/status");
+ScanResult scan_dpkg(const char* path = "/var/lib/dpkg/status",
+                     const char* states = "/var/lib/apt/extended_states");
 
 // cargo: $CARGO_HOME/.crates.toml (cargo writes it alongside .crates2.json; one line per install).
 std::vector<Package> parse_crates_toml(std::string_view text, std::string_view cargo_home);
@@ -161,7 +166,17 @@ History load_history(const std::string& home); // $HISTFILE, zsh, bash, fish
 using Bin = std::pair<std::string, std::string>; // command name, file it runs
 // apt/pacman: bin-dir files from the manifest. Others: their $PATH entries (index = pkg).
 std::vector<Bin> package_bins(const Package& p, int index, std::span<const PathEntry> path);
-Usage bin_usage(std::span<const Bin> bins, const History& h);
+// activity: ecosystem evidence (npm_activity), counted only when nothing better is known.
+Usage bin_usage(std::span<const Bin> bins, const History& h, int64_t activity = 0);
+// npm's cache index (~/.npm/_cacache/index-v5): package name -> last registry fetch.
+void parse_npm_index(std::string_view text, History& out);
+History load_npm_cache(const std::string& home);
+int64_t npm_activity(const Package& p, const History& npm); // npm/pnpm only, else 0
+// Libraries (apt/pacman, no binaries, installed as a dependency) take their dependents' latest
+// use, transitively. Unused since install when every dependent is known unused, or there are
+// none; still unknown when a dependent's use is. Run once usages are in.
+void dependents_usage(std::vector<Package>& pkgs, const char* info_dir = "/var/lib/dpkg/info",
+                      const std::string& local_dir = "/var/lib/pacman/local");
 std::string ago(int64_t ts, int64_t now); // "today", "12d ago", "5mo ago", "3y ago"
 // "● 12d ago", "◌ never", "◌ in history": confidence glyph (● high ◐ medium ◌ low) + when.
 std::string last_active(const Usage& u, int64_t now);

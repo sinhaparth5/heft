@@ -60,6 +60,8 @@ int main() {
     auto pac = scan_pacman(FIXTURES "/pacman/local");
     assert(pac && names(*pac) == (V{"bash@5.2.037-1", "zstd@1.5.6-1"}));
     assert((*pac)[0].arch == "x86_64" && (*pac)[0].ecosystem == "pacman");
+    assert(((*pac)[0].deps == std::vector<std::string>{"glibc", "readline"}));
+    assert(!(*pac)[0].automatic && (*pac)[1].automatic); // %REASON% 1
     assert(scan_pacman("/nonexistent")->empty());
 
     // brew: one row per installed version; kegs without a receipt are skipped; symlinked bins kept.

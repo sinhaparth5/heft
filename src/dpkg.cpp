@@ -1,10 +1,24 @@
 #include "pkgtop.hpp"
 
+#include <algorithm>
+
 namespace {
 
 bool installed(std::string_view status) {
     // "install ok installed", "hold ok installed"; skip config-files, half-installed, ...
     return status.ends_with(" installed");
+}
+
+// "a (>= 1), b:any | c" -> a, b, c
+void names(std::string_view list, std::vector<std::string>& out) {
+    while (!list.empty()) {
+        auto e = list.find_first_of(",|");
+        auto n = list.substr(0, e);
+        list = e == list.npos ? std::string_view{} : list.substr(e + 1);
+        n.remove_prefix(std::min(n.size(), n.find_first_not_of(' ')));
+        if (n = n.substr(0, n.find_first_of(" (:")); !n.empty())
+            out.emplace_back(n);
+    }
 }
 
 } // namespace
@@ -54,16 +68,33 @@ std::vector<Package> parse_dpkg_status(std::string_view text, bool index) {
             cur.arch = val;
         else if (key == "Essential")
             cur.essential = val == "yes";
+        else if (key == "Auto-Installed")
+            cur.automatic = val == "1";
+        else if (index) // apt lists: only versions are needed
+            continue;
+        else if (key == "Depends" || key == "Pre-Depends" || key == "Recommends")
+            names(val, cur.deps);
+        else if (key == "Provides")
+            names(val, cur.provides);
     }
     flush();
     return out;
 }
 
-ScanResult scan_dpkg(const char* path) {
+ScanResult scan_dpkg(const char* path, const char* states) {
     auto f = map_file(path);
     if (!f)
         return std::unexpected(f.error());
-    return parse_dpkg_status(f->text);
+    auto pkgs = parse_dpkg_status(f->text);
+    // ponytail: matched by name only; a Multi-Arch package marked on one arch counts for both.
+    std::unordered_set<std::string> autos;
+    if (auto s = map_file(states); s)
+        for (auto& e : parse_dpkg_status(s->text, true))
+            if (e.automatic)
+                autos.insert(std::move(e.name));
+    for (auto& p : pkgs)
+        p.automatic = autos.contains(p.name);
+    return pkgs;
 }
 
 std::optional<std::vector<std::string>> dpkg_files(const Package& p, const char* info_dir) {

@@ -166,18 +166,20 @@ int path() {
     return errs.empty() ? 0 : 1;
 }
 
-// Packages by bloat score: big and long unused first. Libraries without binaries are left
-// out (no way to tell their use), and so are essential packages.
+// Packages by bloat score: big and long unused first. apt/pacman libraries go by their
+// dependents' use; other packages without binaries are left out, and so are essential ones.
 int stale() {
     auto [pkgs, errs] = scan_all();
     auto path = scan_path(env_or("PATH", ""), pkgs);
     auto t0 = Clock::now();
     auto hist = load_history(home());
+    auto npm = load_npm_cache(home());
     int64_t now = std::time(nullptr);
+    for (int i = 0; i < int(pkgs.size()); ++i)
+        pkgs[i].usage = bin_usage(package_bins(pkgs[i], i, path), hist, npm_activity(pkgs[i], npm));
+    dependents_usage(pkgs);
     std::vector<Package*> rows;
-    for (int i = 0; i < int(pkgs.size()); ++i) {
-        auto& p = pkgs[i];
-        p.usage = bin_usage(package_bins(p, i, path), hist);
+    for (auto& p : pkgs) {
         if (p.usage->conf == Usage::none || p.essential)
             continue;
         p.size = package_size(p);
@@ -190,7 +192,7 @@ int stale() {
     for (auto* p : rows)
         std::println("{:<32}  {:<6}  {:>7}  {:<14}  {}", p->name, p->ecosystem, size_cell(*p->size),
                      last_active(*p->usage, now), p->usage->source);
-    std::println(stderr, "{} packages with binaries, {} history commands; {:.0f} ms", rows.size(),
+    std::println(stderr, "{} packages with known use, {} history commands; {:.0f} ms", rows.size(),
                  hist.size(), ms);
     return errs.empty() ? 0 : 1;
 }
