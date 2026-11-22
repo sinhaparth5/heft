@@ -192,6 +192,26 @@ std::vector<std::string> purge_argv(const Cache& c);
 // couldn't start. Ctrl-C reaches the child; the caller ignores it meanwhile.
 int run_foreground(const std::vector<std::string>& argv);
 
+// Docker (docker.cpp): read from the Engine API over its unix socket ($DOCKER_HOST unix://, else
+// /var/run/docker.sock), a request rather than a subprocess. No socket = empty, not an error.
+struct DockerItem {
+    std::string_view kind;         // container, image, volume, network: the ecosystem column
+    std::string id, name;          // image name: first tag (+N more) or <none>
+    std::string status;            // container: "Up 2 hours"; image: short id; else driver
+    std::string state;             // container only: running, exited, ...
+    std::string image;             // container: its image; volume: mountpoint
+    std::vector<std::string> tags; // image only
+    std::optional<DiskUsage> size; // as the daemon reports it; container = writable layer
+    int64_t shared = 0;            // image: bytes shared with other images
+    int64_t refs = -1;             // image/volume: containers using it, -1 = unknown
+};
+std::vector<DockerItem> parse_docker(std::string_view df, std::string_view networks);
+std::expected<std::string, std::string> docker_get(const std::string& sock, std::string_view path);
+std::expected<std::vector<DockerItem>, std::string> scan_docker();
+// toggle: docker start/stop (containers). Otherwise remove; empty for a running container or a
+// built-in network.
+std::vector<std::string> docker_argv(const DockerItem& d, bool toggle);
+
 // Opt-in update checks (updates.cpp, http.cpp). Network only on request, never on startup.
 std::string update_url(const Package& p); // "" = no registry for this ecosystem
 std::string parse_latest(std::string_view eco, std::string_view body); // "" when not found

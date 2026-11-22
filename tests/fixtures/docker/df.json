@@ -1,0 +1,10 @@
+{"LayersSize":100,"Images":[
+ {"Containers":1,"Id":"sha256:4bf2c44f19a5eba28de4e5cbe50e1c5dc55ae3f8b894f681f4d7676a7e2512e5","RepoTags":["wordpress:7","wp:latest"],"SharedSize":32,"Size":1132925532},
+ {"Containers":0,"Id":"sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289","RepoTags":[],"SharedSize":-1,"Size":2048}],
+ "Containers":[
+ {"Id":"b92813da9a954a5faa40cc49","Names":["/web"],"Image":"wordpress:7","SizeRw":4096,"State":"running","Status":"Up 12 minutes"},
+ {"Id":"c0ffee00c0ffee00c0ffee00","Names":["/old-job"],"Image":"alpine","SizeRw":0,"State":"exited","Status":"Exited (0) 3 days ago"}],
+ "Volumes":[
+ {"Driver":"local","Mountpoint":"/var/lib/docker/volumes/wp_data/_data","Name":"wp_data","UsageData":{"RefCount":2,"Size":130952847}},
+ {"Driver":"nfs","Mountpoint":"","Name":"remote","UsageData":{"RefCount":0,"Size":-1}}],
+ "BuildCache":[]}

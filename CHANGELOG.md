@@ -14,6 +14,7 @@
 - LAST ACTIVE column on the Packages tab (when the terminal is wide enough).
 - apt/pacman libraries (no binaries, installed as a dependency) get a last-used time from the packages that depend on them, so they show up on the Stale tab and in `--stale`. A library nothing depends on, or whose dependents are all unused, counts as unused since install.
 - `u` on the PATH tab uninstalls the package that owns the binary.
+- Docker tab (5): containers, images, volumes and networks with their sizes, read from the Docker API socket. `u` removes the selected item and `t` starts or stops a container, each after a confirmation.
 - npm's cache index is used as weak evidence of use for npm/pnpm globals: a registry fetch after install (npx, a project install) counts as use when nothing better is known.
 
 ### Changed

@@ -25,7 +25,7 @@ It installs to `~/.local/bin` (`/usr/local/bin` as root) after checking the sha2
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build
-./build/pkgtop            # TUI (u uninstalls, p purges a cache, always after a confirm)
+./build/pkgtop            # TUI (u uninstalls, p purges a cache, t starts/stops a container; always after a confirm)
 ./build/pkgtop --list --sizes
 ./build/pkgtop --caches
 ./build/pkgtop --path        # every $PATH binary: owner, shadowed/shim/broken flags

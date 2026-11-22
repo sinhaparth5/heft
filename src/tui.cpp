@@ -53,9 +53,11 @@ struct Palette {
     }
     Color eco(std::string_view e) const {
         static constexpr std::pair<std::string_view, uint32_t> tags[] = {
-            {"apt", 0xfb4934}, {"pacman", 0x83a598}, {"brew", 0xfabd2f}, {"cargo", 0xfe8019},
-            {"go", 0x8ec07c},  {"uv", 0xd3869b},     {"pip", 0xd3869b},  {"pipx", 0xd3869b},
-            {"npm", 0xb8bb26}, {"pnpm", 0xb8bb26}};
+            {"apt", 0xfb4934},    {"pacman", 0x83a598},    {"brew", 0xfabd2f},
+            {"cargo", 0xfe8019},  {"go", 0x8ec07c},        {"uv", 0xd3869b},
+            {"pip", 0xd3869b},    {"pipx", 0xd3869b},      {"npm", 0xb8bb26},
+            {"pnpm", 0xb8bb26},   {"container", 0x83a598}, {"image", 0xfabd2f},
+            {"volume", 0xd3869b}, {"network", 0x8ec07c}};
         for (auto [k, v] : tags)
             if (k == e)
                 return hex(v);
@@ -68,7 +70,7 @@ struct Palette {
     }
 };
 
-constexpr std::array<std::string_view, 4> kTabs = {"Packages", "Caches", "PATH", "Stale"};
+constexpr std::array<std::string_view, 5> kTabs = {"Packages", "Caches", "PATH", "Stale", "Docker"};
 constexpr int kDetailsW = 38;
 constexpr std::array<std::string_view, 3> kSorts = {"size", "name", "eco"};
 
@@ -114,6 +116,7 @@ struct Confirm {
     std::vector<std::string> argv;
     std::string_view eco;
     std::optional<size_t> cache; // caches index for a purge; nullopt = uninstall
+    bool docker = false;         // re-read the Docker tab afterwards
 };
 
 std::string join(const std::vector<std::string>& v) {
@@ -127,13 +130,14 @@ struct App {
     std::vector<Package> pkgs;
     std::vector<Cache> caches;
     std::vector<PathEntry> path;
+    std::vector<DockerItem> docker;
     std::vector<std::string> errors;
     std::vector<std::string_view> ecos; // every ecosystem / PATH owner seen, in scan order
     size_t providers = 0;               // how many of ecos come from packages and caches
 
     int tab = 0;
-    std::array<int, 4> cur{}; // cursor row in the current view, per tab
-    std::array<int, 4> top{}; // first visible row, per tab
+    std::array<int, 5> cur{}; // cursor row in the current view, per tab
+    std::array<int, 5> top{}; // first visible row, per tab
     int page = 10;            // visible table rows, from the last render
     int sort = 0;
     bool rev = false;
@@ -170,7 +174,12 @@ struct App {
     size_t total = 0;
     int64_t now = std::time(nullptr);
 
-    size_t count() const { return tab == 2 ? path.size() : tab == 1 ? caches.size() : pkgs.size(); }
+    size_t count() const {
+        return tab == 4   ? docker.size()
+               : tab == 2 ? path.size()
+               : tab == 1 ? caches.size()
+                          : pkgs.size();
+    }
     // Stale lists packages whose use can be told (binaries, or apt/pacman dependents), minus
     // essential ones.
     bool in_tab(size_t i) const {
@@ -179,6 +188,10 @@ struct App {
     }
 
     Row row(size_t i) const {
+        if (tab == 4) { // no size (network, unknown volume) = blank cell, never "sizing"
+            auto& d = docker[i];
+            return {d.kind, d.name, d.status, d.size ? &d.size : nullptr};
+        }
         if (tab == 2) {
             auto& e = path[i];
             return {e.owner, e.name, std::format("#{} {}", e.rank, tilde(e.dir)), nullptr, &e};
@@ -284,9 +297,11 @@ struct App {
         auto i = selected();
         if (!i || (purge ? tab != 1 : tab == 1))
             return say(purge ? "p purges a cache: switch to Caches (2)"
-                             : "u uninstalls a package: switch to Packages (1), PATH (3) or "
-                               "Stale (4)",
+                             : "u uninstalls a package: switch to Packages (1), PATH (3), "
+                               "Stale (4) or Docker (5)",
                        false);
+        if (tab == 4)
+            return ask_docker(false);
         if (purge) {
             auto& c = caches[*i];
             auto argv = purge_argv(c);
@@ -315,11 +330,40 @@ struct App {
                     argv, p.ecosystem, std::nullopt};
     }
 
+    // u (remove) or t (start/stop) on the Docker tab.
+    void ask_docker(bool toggle) {
+        auto i = selected();
+        if (tab != 4 || !i)
+            return say("t starts/stops containers: switch to Docker (5)", false);
+        auto& d = docker[*i];
+        auto argv = docker_argv(d, toggle);
+        if (argv.empty())
+            return say(toggle                  ? "t starts/stops containers"
+                       : d.kind == "container" ? d.name + " is running: t stops it first"
+                                               : d.name + " is built in: refusing",
+                       false);
+        confirm = Confirm{std::format("{} {} {}", toggle ? argv[1] : "Remove", d.kind, d.name),
+                          toggle   ? "—"
+                          : d.size ? "~" + human_size(d.size->bytes)
+                                   : "unknown",
+                          argv,
+                          d.kind,
+                          std::nullopt,
+                          true};
+        if (toggle)
+            confirm->title[0] = char(std::toupper(confirm->title[0]));
+    }
+
     // After the child exits: rescan only the affected provider. Rows that survived keep their
     // size and usage; new or changed ones are measured here, synchronously.
     // ponytail: sync fill, fine for the usual 0-few changed rows; re-enqueue to the workers
     // if a command ever adds many.
     void refresh(const Confirm& c) {
+        if (c.docker) {
+            if (auto d = scan_docker())
+                docker = std::move(*d);
+            return;
+        }
         if (c.cache) {
             purged[*c.cache] = std::chrono::steady_clock::now();
             caches[*c.cache].size = disk_usage(caches[*c.cache].path.c_str());
@@ -372,14 +416,19 @@ struct App {
         dependents_usage(pkgs);
     }
 
-    uint64_t bytes_of(std::string_view e, bool caches_tab) const {
+    // Bytes per ecosystem on a tab: caches (1), Docker (4) or packages (the rest).
+    // ponytail: Docker image sizes include shared layers, so the image total overcounts;
+    // subtract SharedSize once per layer if it misleads.
+    uint64_t bytes_of(std::string_view e, int t) const {
         uint64_t n = 0;
-        auto sum = [&](auto& items) {
+        auto sum = [&](auto& items, auto eco) {
             for (auto& x : items)
-                if (x.size && (e.empty() || x.ecosystem == e))
+                if (x.size && (e.empty() || x.*eco == e))
                     n += x.size->bytes;
         };
-        caches_tab ? sum(caches) : sum(pkgs);
+        t == 1   ? sum(caches, &Cache::ecosystem)
+        : t == 4 ? sum(docker, &DockerItem::kind)
+                 : sum(pkgs, &Package::ecosystem);
         return n;
     }
 };
@@ -417,7 +466,7 @@ struct Ui {
     const Palette& P;
     // Screen areas from the last render, for mouse hit-testing. Empty until drawn.
     static constexpr Box kNone{1, 0, 1, 0};
-    std::array<Box, 4> tab_box{kNone, kNone, kNone, kNone};
+    std::array<Box, 5> tab_box{kNone, kNone, kNone, kNone, kNone};
     Box rows_box = kNone, eco_box = kNone;
     bool left = false; // Ecosystems pane on screen
 
@@ -437,7 +486,7 @@ struct Ui {
             e.push_back(text(" "));
         }
         e.push_back(filler());
-        uint64_t total = a.bytes_of("", false) + a.bytes_of("", true);
+        uint64_t total = a.bytes_of("", 0) + a.bytes_of("", 1);
         e.push_back(text(std::format(" {} ", human_size(total))) | bgcolor(P.bg_alt));
         e.push_back(text(" "));
         e.push_back(text(std::format(" {} ecosystems ", a.providers)) | bgcolor(P.bg_alt));
@@ -469,11 +518,11 @@ struct Ui {
         Elements bars;
         uint64_t max = 1;
         for (auto e : a.ecos)
-            max = std::max(max, a.bytes_of(e, a.tab == 1));
+            max = std::max(max, a.bytes_of(e, a.tab));
         for (auto [e, n] : a.eco_counts()) {
             if (e.empty() || a.tab == 2)
                 continue;
-            uint64_t b = a.bytes_of(e, a.tab == 1);
+            uint64_t b = a.bytes_of(e, a.tab);
             bars.push_back(hbox({text(std::format(" {:<6}", e)) | color(P.eco(e)),
                                  gauge(float(b) / float(max)) | color(P.eco(e)) | flex,
                                  text(std::format("{:>6} ", human_size(b)))}));
@@ -485,7 +534,10 @@ struct Ui {
         if (!bars.empty())
             body.insert(body.end(), {separatorLight() | color(P.border_dim),
                                      text(" Disk") | color(P.fg_dim), vbox(std::move(bars))});
-        return pane(a.tab == 2 ? "Owners" : "Ecosystems", vbox(std::move(body)), a.focus_eco) |
+        return pane(a.tab == 2   ? "Owners"
+                    : a.tab == 4 ? "Kinds"
+                                 : "Ecosystems",
+                    vbox(std::move(body)), a.focus_eco) |
                size(WIDTH, EQUAL, 26);
     }
 
@@ -497,9 +549,10 @@ struct Ui {
         auto& top = a.top[a.tab];
         top = std::clamp(top, std::max(0, pos - h + 1), pos);
 
-        bool caches = a.tab == 1, bins = a.tab == 2, stale = a.tab == 3;
-        int second_w = caches ? 9 : bins ? std::clamp(width / 3, 16, 40) : 16;
-        int name_w = width - (1 + 1 + second_w + 1 + 6 + 1 + 7 + 1);
+        bool caches = a.tab == 1, bins = a.tab == 2, stale = a.tab == 3, docker = a.tab == 4;
+        int second_w = caches ? 9 : bins || docker ? std::clamp(width / 3, 16, 40) : 16;
+        int eco_w = docker ? 9 : 6; // "container"
+        int name_w = width - (1 + 1 + second_w + 1 + eco_w + 1 + 7 + 1);
         int last_w = a.tab == 0 && name_w >= 16 + 13 ? 12 : 0; // LAST ACTIVE, when there's room
         name_w -= last_w ? last_w + 1 : 0;
         if (name_w < 16) // narrow: VERSION goes first
@@ -514,16 +567,22 @@ struct Ui {
             if (last_w)
                 s2 += std::format("{:<{}} ", trunc(last, last_w), last_w);
             return std::tuple{std::format(" {:<{}} {}", trunc(name, name_w), name_w, s2),
-                              std::format("{:<6} ", trunc(eco, 6)), std::format("{:>7} ", size)};
+                              std::format("{:<{}} ", trunc(eco, eco_w), eco_w),
+                              std::format("{:>7} ", size)};
         };
 
         auto sort_mark = [&](int col) { return a.sort == col ? (a.rev ? "▲" : "▼") : ""; };
         auto [h1, h2, h3] = cols(std::format("{}{}", caches ? "PATH" : "NAME", sort_mark(1)),
-                                 caches  ? "FILES"
-                                 : bins  ? std::format("DIR{}", sort_mark(0))
-                                 : stale ? "LAST ACTIVE"
-                                         : "VERSION",
-                                 std::format("{}{}", bins ? "OWNER" : "ECO", sort_mark(2)),
+                                 caches   ? "FILES"
+                                 : bins   ? std::format("DIR{}", sort_mark(0))
+                                 : stale  ? "LAST ACTIVE"
+                                 : docker ? "STATUS"
+                                          : "VERSION",
+                                 std::format("{}{}",
+                                             bins     ? "OWNER"
+                                             : docker ? "KIND"
+                                                      : "ECO",
+                                             sort_mark(2)),
                                  bins ? "FLAGS" : std::format("SIZE{}", stale ? "" : sort_mark(0)),
                                  caches, "LAST ACTIVE");
         auto header = hbox({text(h1), text(h2), text(h3)}) | bold | bgcolor(P.bg_alt);
@@ -532,11 +591,14 @@ struct Ui {
 
         for (int k = top; k < std::min<int>(top + h, v.size()); ++k) {
             auto r = a.row(v[k]);
-            if (r.size && !*r.size && (a.tab == 1 || a.origin[v[k]] != size_t(-1)))
+            if (r.size && !*r.size && !docker && (caches || a.origin[v[k]] != size_t(-1)))
                 unsized.insert(unsized.begin(),
                                a.tab == 1 ? a.where.size() + v[k] : a.origin[v[k]]);
             auto [c1, c2, c3] = cols(r.name, r.second, r.eco,
-                                     r.bin ? flags(*r.bin) : size_cell(*r.size), caches, r.last);
+                                     r.bin    ? flags(*r.bin)
+                                     : r.size ? size_cell(*r.size)
+                                              : "",
+                                     caches, r.last);
             bool selected = k == pos;
             auto eco = text(c2);
             auto sz = text(c3);
@@ -544,7 +606,7 @@ struct Ui {
                 eco = eco | color(P.eco(r.eco));
                 if (r.bin)
                     sz = sz | color(r.bin->dangling ? P.danger : r.bin->shadowed ? P.warn : P.info);
-                else if (!*r.size)
+                else if (r.size && !*r.size)
                     sz = sz | color(P.fg_dim);
             }
             auto line = hbox({text(c1), eco, sz});
@@ -611,6 +673,30 @@ struct Ui {
                                                 fit_words(tilde(o.dir), kDetailsW - 15)));
             return kv;
         }
+        if (a.tab == 4) {
+            auto& d = a.docker[i];
+            kv.emplace_back(d.name, std::string{d.kind});
+            kv.emplace_back("ID", d.id.substr(0, 12));
+            if (!d.state.empty())
+                kv.emplace_back("Status", d.status);
+            if (d.kind == "container")
+                kv.emplace_back("Image", d.image);
+            if (d.kind == "image" && d.tags.size() > 1)
+                kv.emplace_back("Tags", join(d.tags));
+            if (d.kind == "volume" || d.kind == "network")
+                kv.emplace_back("Driver", d.status);
+            if (d.kind == "volume")
+                kv.emplace_back("Path", d.image);
+            if (d.size)
+                kv.emplace_back(d.kind == "container" ? "Writable" : "Size",
+                                human_size(d.size->bytes) + " (reported by Docker)");
+            if (d.shared > 0)
+                kv.emplace_back("Shared", human_size(d.shared) + " with other images");
+            if (d.refs >= 0)
+                kv.emplace_back("Used by",
+                                std::format("{} container{}", d.refs, d.refs == 1 ? "" : "s"));
+            return kv;
+        }
         if (a.tab == 1) {
             auto& c = a.caches[i];
             kv.emplace_back(std::string{c.ecosystem}, "cache");
@@ -673,9 +759,9 @@ struct Ui {
 
     Element keys() const {
         std::pair<std::string_view, std::string_view> hints[] = {
-            {"/", "Filter"},    {"s", "Sort"},      {"S", "Reverse"},
-            {"e", "Ecosystem"}, {"u", "Uninstall"}, {"p", "Purge"},
-            {"Tab", "Focus"},   {"?", "Hide keys"}, {"q", "Quit"}};
+            {"/", "Filter"},    {"s", "Sort"},  {"S", "Reverse"},    {"e", "Ecosystem"},
+            {"u", "Uninstall"}, {"p", "Purge"}, {"t", "Start/stop"}, {"Tab", "Focus"},
+            {"?", "Hide keys"}, {"q", "Quit"}};
         Elements e;
         for (auto [k, what] : hints) {
             e.push_back(text(std::format("  {} ", k)) | bold | color(P.accent));
@@ -700,15 +786,15 @@ struct Ui {
         auto note = text("");
         if (!a.status.empty() && std::chrono::steady_clock::now() < a.status_until)
             note = text("  " + a.status) | bold | color(a.status_ok ? P.ok : P.danger);
-        return hbox({mode, text(" " + crumb) | color(P.fg), note, filler(),
-                     text(std::format("sort: {} {}   filter: {}   ",
-                                      a.sort == 0 && a.tab == 2   ? "lookup"
-                                      : a.sort == 0 && a.tab == 3 ? "bloat"
-                                                                  : kSorts[a.sort],
-                                      a.rev ? "▲" : "▼", filter)) |
-                         color(P.fg_dim),
-                     P.pill(std::format(" {} in caches ", human_size(a.bytes_of("", true))),
-                            P.bg_sel, P.fg)});
+        return hbox(
+            {mode, text(" " + crumb) | color(P.fg), note, filler(),
+             text(std::format("sort: {} {}   filter: {}   ",
+                              a.sort == 0 && a.tab == 2   ? "lookup"
+                              : a.sort == 0 && a.tab == 3 ? "bloat"
+                                                          : kSorts[a.sort],
+                              a.rev ? "▲" : "▼", filter)) |
+                 color(P.fg_dim),
+             P.pill(std::format(" {} in caches ", human_size(a.bytes_of("", 1))), P.bg_sel, P.fg)});
     }
 
     Element render() {
@@ -831,7 +917,7 @@ struct Ui {
             return a.move(-1'000'000), true;
         if (key('G') || e == Event::End)
             return a.move(1'000'000), true;
-        for (char c = '1'; c <= '4'; ++c)
+        for (char c = '1'; c <= '5'; ++c)
             if (key(c))
                 return a.tab = c - '1', a.eco.clear(), true;
         if (e == Event::Tab || e == Event::TabReverse)
@@ -848,6 +934,8 @@ struct Ui {
             return a.keys = !a.keys, true;
         if (key('u') || key('p'))
             return a.ask(key('p')), true;
+        if (key('t'))
+            return a.ask_docker(true), true;
         if (key('e'))
             return a.picked_from = a.eco, a.picking = true, true;
         return false;
@@ -900,9 +988,11 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     a.providers = a.ecos.size();
     for (auto& e : a.path)
         seen(e.owner);
+    for (auto k : {"container", "image", "volume", "network"}) // Docker tab, once loaded
+        seen(k);
     size_t sizes = a.pkgs.size() + a.caches.size();
-    a.total = sizes + a.pkgs.size(); // + one usage result per package
-    if (updates)                     // + one per package with a local index or registry
+    a.total = sizes + a.pkgs.size() + 1; // + one usage result per package, + Docker
+    if (updates)                         // + one per package with a local index or registry
         for (auto& p : a.pkgs)
             a.total += checkable(p);
 
@@ -1018,6 +1108,16 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
             own_system_bins(a.path, a.pkgs);
             dependents_usage(a.pkgs);
         });
+    });
+    threads.emplace_back([&] { // Docker: one /system/df, ~0.5 s on a busy daemon
+        auto d = scan_docker();
+        post([&a, d = std::move(d)]() mutable {
+            if (d)
+                a.docker = std::move(*d);
+            else
+                a.errors.push_back("docker: " + d.error());
+        });
+        ++a.done;
     });
     if (updates)
         threads.emplace_back([&](std::stop_token st) {

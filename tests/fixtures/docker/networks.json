@@ -1,0 +1,2 @@
+[{"Name":"bridge","Id":"5b60cf3b4ed1e203815e1ae1","Scope":"local","Driver":"bridge","Labels":{}},
+ {"Name":"wp_default","Id":"77aa88bb99cc00dd11ee22ff","Scope":"local","Driver":"bridge","Labels":{}}]
