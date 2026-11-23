@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [2026.11.8] - 2026-11-23
 ### Fixed
 - On WSL, pkgtop no longer sits on a blank screen for ~50 s at startup ([#11](https://github.com/sinhaparth5/pkgtop/issues/11)). WSL adds the Windows `PATH` (`/mnt/c/...`), and checking each of its ~5k files over the 9P mount took several host round trips. Those directories are now listed from the directory entries alone, so the `PATH` scan dropped from 51 s to 0.23 s. Windows binaries still appear on the PATH tab.
 
