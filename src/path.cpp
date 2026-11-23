@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <dirent.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -48,6 +50,19 @@ std::string wrapper_target(const std::string& file, int hops = 3) {
             return deeper.empty() ? next : deeper;
         }
     return "";
+}
+
+// Everything but directories, from d_type alone: no per-file syscalls.
+std::vector<std::string> plain_files(const std::string& dir) {
+    std::vector<std::string> out;
+    if (DIR* d = ::opendir(dir.c_str())) {
+        while (dirent* e = ::readdir(d))
+            if (e->d_name[0] != '.' && e->d_type != DT_DIR)
+                out.emplace_back(e->d_name);
+        ::closedir(d);
+    }
+    std::ranges::sort(out);
+    return out;
 }
 
 } // namespace
@@ -115,23 +130,29 @@ std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Pa
         auto mgr = manager(raw);
         bool shim_dir = raw.ends_with("/shims") || mgr == "volta";
         bool system_dir = dir == "/usr/bin" || dir == "/usr/sbin" || dir == "/usr/games";
+        // WSL appends the Windows PATH (/mnt/c/...). drvfs is 9P: every stat is a round trip
+        // to the host, ~10 ms each, so System32 alone took 50 s. Trust d_type there instead.
+        // ponytail: any 9P mount gets this; WSL1 drvfs isn't 9P and still pays full price.
+        struct statfs fs;
+        bool remote = ::statfs(dir.c_str(), &fs) == 0 && fs.f_type == 0x01021997; // V9FS_MAGIC
 
-        for (auto& name : list_dir(raw, true)) {
+        for (auto& name : remote ? plain_files(raw) : list_dir(raw, true)) {
             PathEntry e;
             e.name = name, e.dir = raw, e.rank = rank;
             auto full = raw + "/" + name;
-            struct stat st;
-            if (::lstat(full.c_str(), &st) != 0)
-                continue;
-            if (S_ISLNK(st.st_mode)) {
-                e.target = real(full);
-                e.dangling = e.target.empty();
-            } else {
-                e.target = dir + "/" + name;
+            e.target = dir + "/" + name;
+            if (!remote) {
+                struct stat st;
+                if (::lstat(full.c_str(), &st) != 0)
+                    continue;
+                if (S_ISLNK(st.st_mode)) {
+                    e.target = real(full);
+                    e.dangling = e.target.empty();
+                }
+                if (!e.dangling && (::stat(full.c_str(), &st) != 0 || !S_ISREG(st.st_mode) ||
+                                    ::access(full.c_str(), X_OK) != 0))
+                    continue; // not an executable file (data, dirs, helpers)
             }
-            if (!e.dangling && (::stat(full.c_str(), &st) != 0 || !S_ISREG(st.st_mode) ||
-                                ::access(full.c_str(), X_OK) != 0))
-                continue; // not an executable file (data, dirs, helpers)
 
             auto own = [&](const std::string& file) {
                 if (auto it = exact.find(file); it != exact.end())
@@ -142,7 +163,7 @@ std::vector<PathEntry> scan_path(std::string_view path_env, const std::vector<Pa
                         best = root.size(), e.pkg = i;
             };
             own(e.target);
-            if (e.pkg < 0 && !e.dangling && !system_dir && mgr.empty())
+            if (e.pkg < 0 && !e.dangling && !system_dir && mgr.empty() && !remote)
                 if (auto w = wrapper_target(full); !w.empty())
                     own(real(w));
             e.owner = e.pkg >= 0                  ? pkgs[e.pkg].ecosystem
