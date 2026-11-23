@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -85,7 +85,7 @@ std::expected<std::string, std::string> docker_get(const std::string& sock, std:
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return std::unexpected(std::strerror(errno));
-    timeval tv{30, 0}; // a hung daemon must not hang pkgtop's exit (threads are joined)
+    timeval tv{30, 0}; // a hung daemon must not hang heft's exit (threads are joined)
     ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
     std::string r;

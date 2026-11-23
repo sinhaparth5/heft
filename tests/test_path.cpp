@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -27,7 +27,7 @@ const PathEntry& find(const std::vector<PathEntry>& v, std::string_view name, in
 } // namespace
 
 int main() {
-    char tmpl[] = "/tmp/pkgtop-path-XXXXXX";
+    char tmpl[] = "/tmp/heft-path-XXXXXX";
     fs::path t = ::mkdtemp(tmpl);
 
     // a: cargo-style shared bin dir; b: a link farm into a uv tool root; c: pyenv shims.

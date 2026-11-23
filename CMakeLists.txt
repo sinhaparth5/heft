@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 # CalVer: YYYY.MM.PATCH (PATCH resets each month)
-project(pkgtop VERSION 2026.11.8 LANGUAGES CXX)
+project(heft VERSION 2026.11.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,15 +22,15 @@ FetchContent_MakeAvailable(ftxui)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-add_library(pkgtop_core STATIC
+add_library(heft_core STATIC
   src/file.cpp src/json.cpp src/size.cpp src/caches.cpp
   src/dpkg.cpp src/cargo.cpp src/pacman.cpp src/brew.cpp src/uv.cpp src/pipx.cpp
   src/npm.cpp src/pnpm.cpp src/go.cpp src/path.cpp src/usage.cpp src/mutate.cpp
   src/updates.cpp src/docker.cpp)
-target_include_directories(pkgtop_core PUBLIC src)
+target_include_directories(heft_core PUBLIC src)
 
-add_executable(pkgtop src/main.cpp src/tui.cpp src/http.cpp)
-target_link_libraries(pkgtop PRIVATE pkgtop_core ftxui::component)
+add_executable(heft src/main.cpp src/tui.cpp src/http.cpp)
+target_link_libraries(heft PRIVATE heft_core ftxui::component)
 # Optional: only the opt-in update checks (--updates, --outdated) need it.
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
@@ -40,30 +40,30 @@ if(PkgConfig_FOUND)
   pkg_check_modules(ZLIB QUIET zlib)
 endif()
 if(ZLIB_FOUND)
-  target_link_libraries(pkgtop_core PUBLIC ${ZLIB_LIBRARIES})
-  target_compile_definitions(pkgtop_core PUBLIC PKGTOP_ZLIB)
+  target_link_libraries(heft_core PUBLIC ${ZLIB_LIBRARIES})
+  target_compile_definitions(heft_core PUBLIC HEFT_ZLIB)
 endif()
 # Release builds: one fully static binary (musl), so it runs on any distro.
-option(PKGTOP_STATIC "Link pkgtop fully statically" OFF)
-if(PKGTOP_STATIC)
-  target_link_options(pkgtop PRIVATE -static)
+option(HEFT_STATIC "Link heft fully statically" OFF)
+if(HEFT_STATIC)
+  target_link_options(heft PRIVATE -static)
 endif()
 if(CURL_FOUND)
-  if(PKGTOP_STATIC)
-    target_link_directories(pkgtop PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
-    target_link_libraries(pkgtop PRIVATE ${CURL_STATIC_LIBRARIES})
+  if(HEFT_STATIC)
+    target_link_directories(heft PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
+    target_link_libraries(heft PRIVATE ${CURL_STATIC_LIBRARIES})
   else()
-    target_link_libraries(pkgtop PRIVATE ${CURL_LINK_LIBRARIES})
+    target_link_libraries(heft PRIVATE ${CURL_LINK_LIBRARIES})
   endif()
-  target_include_directories(pkgtop PRIVATE ${CURL_INCLUDE_DIRS})
-  target_compile_definitions(pkgtop PRIVATE PKGTOP_CURL)
+  target_include_directories(heft PRIVATE ${CURL_INCLUDE_DIRS})
+  target_compile_definitions(heft PRIVATE HEFT_CURL)
 endif()
-target_compile_definitions(pkgtop PRIVATE PKGTOP_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(heft PRIVATE HEFT_VERSION="${PROJECT_VERSION}")
 
 enable_testing()
 foreach(t dpkg cargo size json providers path usage mutate updates docker)
   add_executable(test_${t} tests/test_${t}.cpp)
-  target_link_libraries(test_${t} PRIVATE pkgtop_core)
+  target_link_libraries(test_${t} PRIVATE heft_core)
   # Tests use assert(); keep it on in every build type.
   target_compile_options(test_${t} PRIVATE -UNDEBUG)
   target_compile_definitions(test_${t} PRIVATE FIXTURES="${CMAKE_SOURCE_DIR}/tests/fixtures")

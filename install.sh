@@ -1,13 +1,16 @@
 #!/bin/sh
-# Install the latest pkgtop release (static Linux binary, x86_64 or aarch64):
-#   curl -fsSL https://raw.githubusercontent.com/sinhaparth5/pkgtop/main/install.sh | sh
+# Install the latest heft release (static Linux binary, x86_64 or aarch64):
+#   curl -fsSL https://raw.githubusercontent.com/sinhaparth5/heft/main/install.sh | sh
 # Options (environment):
-#   PKGTOP_VERSION=v2026.11.1   a specific release instead of the latest
-#   PKGTOP_BIN_DIR=/usr/local/bin   where to put it (default ~/.local/bin, /usr/local/bin as root)
+#   HEFT_VERSION=v2026.11.1   a specific release instead of the latest
+#   HEFT_BIN_DIR=/usr/local/bin   where to put it (default ~/.local/bin, /usr/local/bin as root)
 set -eu
+# Renamed from pkgtop: the old variable names still work.
+HEFT_VERSION="${HEFT_VERSION:-${PKGTOP_VERSION:-}}"
+HEFT_BIN_DIR="${HEFT_BIN_DIR:-${PKGTOP_BIN_DIR:-}}"
 
-repo=sinhaparth5/pkgtop
-die() { echo "pkgtop install: $*" >&2; exit 1; }
+repo=sinhaparth5/heft
+die() { echo "heft install: $*" >&2; exit 1; }
 
 case "$(uname -s)" in
 Linux) ;;
@@ -21,13 +24,13 @@ aarch64 | arm64) arch=aarch64 ;;
 *) die "no prebuilt binary for $(uname -m); build from source: https://github.com/$repo#build" ;;
 esac
 
-asset="pkgtop-linux-$arch"
-if [ -n "${PKGTOP_VERSION:-}" ]; then
-    base="https://github.com/$repo/releases/download/$PKGTOP_VERSION"
+asset="heft-linux-$arch"
+if [ -n "${HEFT_VERSION:-}" ]; then
+    base="https://github.com/$repo/releases/download/$HEFT_VERSION"
 else
     base="https://github.com/$repo/releases/latest/download"
 fi
-base="${PKGTOP_BASE_URL:-$base}" # mirrors, or file:// for testing
+base="${HEFT_BASE_URL:-$base}" # mirrors, or file:// for testing
 
 if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
@@ -48,19 +51,23 @@ tar -xzf "$tmp/$asset.tar.gz" -C "$tmp"
 default_dir="$HOME/.local/bin"
 [ "$(id -u)" = 0 ] && default_dir=/usr/local/bin
 # Upgrade: replace the copy already on PATH instead of adding a second one.
-old=$(command -v pkgtop 2>/dev/null || true)
+old=$(command -v heft 2>/dev/null || command -v pkgtop 2>/dev/null || true)
 [ -n "$old" ] && [ -w "$(dirname "$old")" ] && default_dir=$(dirname "$old")
-bin_dir="${PKGTOP_BIN_DIR:-$default_dir}"
-was=$("$bin_dir/pkgtop" --version 2>/dev/null || true)
+bin_dir="${HEFT_BIN_DIR:-$default_dir}"
+was=$("$bin_dir/heft" --version 2>/dev/null || "$bin_dir/pkgtop" --version 2>/dev/null || true)
 mkdir -p "$bin_dir"
-# Copy next to it, then rename: atomic, and a running pkgtop keeps its old file.
-install -m 755 "$tmp/$asset/pkgtop" "$bin_dir/.pkgtop.new" && mv -f "$bin_dir/.pkgtop.new" "$bin_dir/pkgtop" ||
-    die "can't write to $bin_dir (try PKGTOP_BIN_DIR=... or sudo)"
-now=$("$bin_dir/pkgtop" --version)
+# Copy next to it, then rename: atomic, and a running heft keeps its old file.
+install -m 755 "$tmp/$asset/heft" "$bin_dir/.heft.new" && mv -f "$bin_dir/.heft.new" "$bin_dir/heft" ||
+    die "can't write to $bin_dir (try HEFT_BIN_DIR=... or sudo)"
+now=$("$bin_dir/heft" --version)
 if [ -n "$was" ] && [ "$was" != "$now" ]; then
-    echo "Updated $was -> $now in $bin_dir/pkgtop"
+    echo "Updated $was -> $now in $bin_dir/heft"
 else
-    echo "Installed $now to $bin_dir/pkgtop"
+    echo "Installed $now to $bin_dir/heft"
+fi
+# pkgtop was renamed to heft: replace an old binary with a link so `pkgtop` keeps working.
+if [ -f "$bin_dir/pkgtop" ] && [ ! -L "$bin_dir/pkgtop" ]; then
+    ln -sf heft "$bin_dir/pkgtop" && echo "pkgtop is now heft: $bin_dir/pkgtop links to it (safe to delete)"
 fi
 case ":$PATH:" in
 *":$bin_dir:"*) ;;

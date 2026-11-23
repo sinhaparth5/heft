@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cassert>
 #include <print>
@@ -31,7 +31,7 @@ int main() {
 
     Package go;
     go.ecosystem = "go", go.name = "gopls";
-    assert(uninstall_argv(go).empty()); // no native command; pkgtop won't rm it
+    assert(uninstall_argv(go).empty()); // no native command; heft won't rm it
 
     assert((purge_argv({"go", "/home/u/go/pkg/mod", {}}) == V{"go", "clean", "-modcache"}));
     assert(purge_argv({"cargo", "/home/u/.cargo/registry", {}}).empty());
@@ -39,7 +39,7 @@ int main() {
     // A name with shell metacharacters stays one argument: no shell is involved.
     assert(run_foreground({"sh", "-c", "exit 3"}) == 3);
     assert(run_foreground({"true", "; exit 9"}) == 0);
-    assert(run_foreground({"/nonexistent/pkgtop-test"}) == 127);
+    assert(run_foreground({"/nonexistent/heft-test"}) == 127);
     assert(run_foreground({"sh", "-c", "kill -TERM $$"}) == 128 + 15);
     std::println("test_mutate: ok");
 }

@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <climits>
 #include <csignal>
@@ -44,7 +44,7 @@ std::vector<std::string> uninstall_argv(const Package& p) {
             return {};
         return {"npm", "uninstall", "-g", "--prefix", p.root.substr(0, at), p.name};
     }
-    return {}; // go: no uninstall command, and pkgtop never deletes files itself
+    return {}; // go: no uninstall command, and heft never deletes files itself
 }
 
 std::vector<std::string> purge_argv(const Cache& c) {
@@ -74,7 +74,7 @@ int run_foreground(const std::vector<std::string>& argv) {
         args.push_back(const_cast<char*>(a.c_str()));
     args.push_back(nullptr);
 
-    // Ctrl-C goes to the whole foreground group: it should stop the child, not pkgtop.
+    // Ctrl-C goes to the whole foreground group: it should stop the child, not heft.
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
     sigset_t def;

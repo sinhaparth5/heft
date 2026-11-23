@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cassert>
 #include <ctime>
@@ -19,8 +19,8 @@ void touch(const fs::path& p, time_t atime) {
 
 int main() {
     assert(command_names("git status") == V{"git"});
-    assert((command_names("FOO=1 sudo ./build/pkgtop --list | rg -i x && ls") ==
-            V{"pkgtop", "rg", "ls"}));
+    assert((command_names("FOO=1 sudo ./build/heft --list | rg -i x && ls") ==
+            V{"heft", "rg", "ls"}));
     assert(command_names("git commit -m 'a | b; c'") == V{"git"}); // quoted separators
     assert((command_names("(cd x; make)") == V{"cd", "make"}));
     assert(command_names("  ").empty());
@@ -42,7 +42,7 @@ int main() {
     assert(h.at("fish_cmd") == 1700000200 && h.at("untimed_fish") == 0);
     assert(!h.contains("ignored") && !h.contains("-"));
 
-    char tmpl[] = "/tmp/pkgtop-usage-XXXXXX";
+    char tmpl[] = "/tmp/heft-usage-XXXXXX";
     fs::path t = ::mkdtemp(tmpl);
     time_t now = std::time(nullptr);
     touch(t / "used", now + 3600); // read after install

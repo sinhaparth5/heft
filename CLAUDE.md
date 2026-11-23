@@ -1,4 +1,4 @@
-# pkgtop
+# heft
 
 `top` for package managers: a C++23 TUI that shows every globally installed package, cache, and `$PATH` binary across ecosystems (apt, pacman, brew, cargo, go, uv/pip, npm/pnpm, version shims), with physical disk usage, last-used times, and shadowing conflicts.
 
@@ -9,7 +9,7 @@ Open work is tracked in GitHub issues.
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
-./build/pkgtop
+./build/heft
 ```
 
 Toolchain: GCC 15 / CMake 4 / Ninja, Linux first. `compile_commands.json` is generated in `build/`.
@@ -19,7 +19,7 @@ Toolchain: GCC 15 / CMake 4 / Ninja, Linux first. `compile_commands.json` is gen
 1. **No subprocesses on read paths.** Discovery never runs `apt`, `npm`, `pip`, `brew`, etc. Parse on-disk state directly: `/var/lib/dpkg/status`, `/var/lib/pacman/local/*/desc`, `~/.cargo/.crates2.json`, `uv-receipt.toml`, `package.json`, the `.go.buildinfo` ELF section.
 2. **Physical, not logical, disk usage.** Sum `st_blocks * 512`, dedupe by `(st_dev, st_ino)` within a scan, never follow symlinks (`AT_SYMLINK_NOFOLLOW`), never cross `st_dev` boundaries. Use `d_type` from `getdents` to skip `stat` where possible.
 3. **Render first, hydrate later.** Names, versions, and paths must be on screen in tens of ms. Sizes, shell-history usage, and remote version checks stream in from background workers and never block input.
-4. **Mutation is delegated.** pkgtop never deletes package files itself. Uninstall and purge run the ecosystem's own command in the foreground: restore the terminal, run the child, re-enter the TUI, and rescan only that provider.
+4. **Mutation is delegated.** heft never deletes package files itself. Uninstall and purge run the ecosystem's own command in the foreground: restore the terminal, run the child, re-enter the TUI, and rescan only that provider.
 
 ## Safety rules
 

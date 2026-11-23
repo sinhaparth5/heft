@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cassert>
 #include <cstring>
@@ -106,7 +106,7 @@ int main() {
     assert(!parse_go_buildinfo(""));
     assert(!parse_go_buildinfo(fake_go_binary("go1.26.0", "").substr(0, 70))); // truncated
 
-    char dir[] = "/tmp/pkgtop-go-XXXXXX";
+    char dir[] = "/tmp/heft-go-XXXXXX";
     assert(::mkdtemp(dir));
     std::string d = dir;
     std::ofstream(d + "/gopls") << fake_go_binary("go1.26.0", mod);

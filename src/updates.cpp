@@ -1,11 +1,11 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <unordered_map>
 
-#ifdef PKGTOP_ZLIB
+#ifdef HEFT_ZLIB
 #include <zlib.h>
 #endif
 
@@ -78,7 +78,7 @@ std::string semver(std::string_view v) {
     return s;
 }
 
-#ifdef PKGTOP_ZLIB
+#ifdef HEFT_ZLIB
 // Calls f(name, contents) for each regular file in a tar, gzip-compressed or plain.
 template <class F> void each_tar_file(const std::string& path, F f) {
     gzFile z = gzopen(path.c_str(), "rb");
@@ -152,7 +152,7 @@ bool outdated(const Package& p) {
 }
 
 bool local_update_source(const Package& p) {
-#ifdef PKGTOP_ZLIB
+#ifdef HEFT_ZLIB
     if (p.ecosystem == "pacman")
         return true;
 #endif
@@ -183,7 +183,7 @@ void local_latest(const std::vector<Package>& pkgs,
             if (auto m = map_file((apt_lists + "/" + f).c_str()))
                 for (auto& p : parse_dpkg_status(m->text, true))
                     offer(p);
-#ifdef PKGTOP_ZLIB
+#ifdef HEFT_ZLIB
     for (auto& f : list_dir(pacman_sync))
         if (f.ends_with(".db"))
             each_tar_file(pacman_sync + "/" + f, [&](std::string_view name, std::string_view body) {

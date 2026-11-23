@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 // pipx: <venvs>/<name>/pipx_metadata.json, main_package.{package, package_version, apps}.
 ScanResult scan_pipx(const std::string& venvs_dir) {

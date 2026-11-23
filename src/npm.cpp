@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 // <dir>/package.json → Package; shared with pnpm. Empty name = not a package.
 Package read_node_package(const std::string& dir, std::string_view ecosystem) {

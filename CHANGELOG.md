@@ -1,10 +1,12 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- pkgtop is now **heft** (another project already uses the pkgtop name). The command, release tarballs (`heft-linux-<arch>`), repo and install URL are renamed. Re-running `install.sh` (the old URL still works) replaces an installed `pkgtop` with `heft` and leaves `pkgtop` as a symlink to it. `PKGTOP_VERSION` and `PKGTOP_BIN_DIR` are still read, and the size cache moves from `$XDG_CACHE_HOME/pkgtop` to `$XDG_CACHE_HOME/heft` on first run.
 
 ## [2026.11.8] - 2026-11-23
 ### Fixed
-- On WSL, pkgtop no longer sits on a blank screen for ~50 s at startup ([#11](https://github.com/sinhaparth5/pkgtop/issues/11)). WSL adds the Windows `PATH` (`/mnt/c/...`), and checking each of its ~5k files over the 9P mount took several host round trips. Those directories are now listed from the directory entries alone, so the `PATH` scan dropped from 51 s to 0.23 s. Windows binaries still appear on the PATH tab.
+- On WSL, pkgtop no longer sits on a blank screen for ~50 s at startup ([#11](https://github.com/sinhaparth5/heft/issues/11)). WSL adds the Windows `PATH` (`/mnt/c/...`), and checking each of its ~5k files over the 9P mount took several host round trips. Those directories are now listed from the directory entries alone, so the `PATH` scan dropped from 51 s to 0.23 s. Windows binaries still appear on the PATH tab.
 
 ## [2026.11.7] - 2026-11-22
 ### Fixed

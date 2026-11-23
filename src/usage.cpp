@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -63,7 +63,7 @@ std::vector<std::string_view> command_names(std::string_view line) {
             if (word.find('=') != word.npos || std::ranges::contains(prefixes, word))
                 continue; // FOO=bar cmd, sudo cmd
             if (word.front() != '-')
-                out.push_back(word.substr(word.rfind('/') + 1)); // ./build/pkgtop -> pkgtop
+                out.push_back(word.substr(word.rfind('/') + 1)); // ./build/heft -> heft
             break;
         }
     }

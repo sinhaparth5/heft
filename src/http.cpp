@@ -1,11 +1,11 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <map>
 #include <thread>
 
-#ifdef PKGTOP_CURL
+#ifdef HEFT_CURL
 #include <curl/curl.h>
 #include <mutex>
 
@@ -20,7 +20,7 @@ std::string http_get(const std::string& url, std::stop_token st) {
         return {};
     std::string body;
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "pkgtop/" PKGTOP_VERSION); // crates.io requires one
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "heft/" HEFT_VERSION); // crates.io requires one
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);

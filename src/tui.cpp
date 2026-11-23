@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -497,7 +497,7 @@ struct Ui {
     }
 
     Element top_bar() {
-        Elements e{P.pill(" pkgtop ", P.accent), text(" ")};
+        Elements e{P.pill(" heft ", P.accent), text(" ")};
         for (int i = 0; i < int(kTabs.size()); ++i) {
             auto label = std::format(" {} {} ", i + 1, kTabs[i]);
             e.push_back((i == a.tab ? P.pill(label, P.accent)
@@ -902,7 +902,7 @@ struct Ui {
         };
         auto body = vbox(
             {text(""), kv("Will run:", join(c.argv)), kv("Reclaims:", c.reclaim), text(""),
-             text("  pkgtop will leave the screen while this runs.  ") | color(P.fg_dim), text(""),
+             text("  heft will leave the screen while this runs.  ") | color(P.fg_dim), text(""),
              hbox({filler(), P.pill(" y  Run ", P.danger), text("      "),
                    P.pill(" n  Cancel ", P.accent), filler()}),
              text("")});
@@ -928,7 +928,7 @@ struct Ui {
                 std::println("$ {}", join(c->argv));
                 std::fflush(stdout);
                 rc = run_foreground(c->argv);
-                std::print("\n{} exit {}. Press Enter to return to pkgtop.", rc ? "✗" : "✓", rc);
+                std::print("\n{} exit {}. Press Enter to return to heft.", rc ? "✗" : "✓", rc);
                 std::fflush(stdout);
                 for (int ch; (ch = std::getchar()) != '\n' && ch != EOF;) {
                 }
@@ -1078,7 +1078,9 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     // size until its rescan lands (files change deep inside without touching the top dir).
     const char *xdg = std::getenv("XDG_CACHE_HOME"), *home = std::getenv("HOME");
     std::string cache_dir = xdg && *xdg ? xdg : std::string(home ? home : "") + "/.cache";
-    std::string sizes_file = cache_dir + "/pkgtop/sizes";
+    // Renamed from pkgtop: carry its cache over once (no-op if missing or heft/ exists).
+    ::rename((cache_dir + "/pkgtop").c_str(), (cache_dir + "/heft").c_str());
+    std::string sizes_file = cache_dir + "/heft/sizes";
     auto cache_key = [](const Cache& c) { return "cache\t" + c.path; };
     {
         auto old = load_sizes(sizes_file);
@@ -1199,7 +1201,7 @@ int run_tui(std::vector<Package> pkgs, std::vector<Cache> caches, std::vector<Pa
     for (auto& c : a.caches)
         if (c.size)
             now.emplace(cache_key(c), *c.size);
-    ::mkdir(cache_dir.c_str(), 0755), ::mkdir((cache_dir + "/pkgtop").c_str(), 0755);
+    ::mkdir(cache_dir.c_str(), 0755), ::mkdir((cache_dir + "/heft").c_str(), 0755);
     save_sizes(sizes_file, now);
     return 0;
 }

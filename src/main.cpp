@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -201,7 +201,7 @@ int stale() {
 // is the only network access.
 int outdated_cmd() {
     if (!updates_supported())
-        std::println(stderr, "pkgtop was built without libcurl: only apt/pacman are checked");
+        std::println(stderr, "heft was built without libcurl: only apt/pacman are checked");
     auto [pkgs, errs] = scan_all();
     auto t0 = Clock::now();
     std::stop_source never;
@@ -247,7 +247,7 @@ int main(int argc, char** argv) {
     bool ascii = std::erase(args, "--ascii") > 0;
     std::string_view arg = args.size() > 0 ? args[0] : "";
     if (arg == "--version") {
-        std::println("pkgtop {}", PKGTOP_VERSION);
+        std::println("heft {}", HEFT_VERSION);
         return 0;
     }
     std::string_view arg2 = args.size() > 1 ? args[1] : "";
@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
     }
     std::println(
         stderr,
-        "usage: pkgtop [--ascii] [--updates | --list [--sizes] | --caches | --path | --stale | "
+        "usage: heft [--ascii] [--updates | --list [--sizes] | --caches | --path | --stale | "
         "--outdated | --version]");
     return 2;
 }

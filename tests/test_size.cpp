@@ -1,4 +1,4 @@
-#include "pkgtop.hpp"
+#include "heft.hpp"
 
 #include <cassert>
 #include <cstdio>
@@ -36,7 +36,7 @@ uint64_t du(const fs::path& p) {
 
 int main() {
     // Hardlinks can't live in git, so build the tree at runtime.
-    std::string tmpl = (fs::temp_directory_path() / "pkgtop-size-XXXXXX").string();
+    std::string tmpl = (fs::temp_directory_path() / "heft-size-XXXXXX").string();
     fs::path root = ::mkdtemp(tmpl.data());
 
     write_file(root / "big", 1 << 20);

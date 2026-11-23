@@ -11,7 +11,7 @@ tag:
 	older=$$(awk '/^## \[Unreleased\]/ {u=1; next} u && /^## \[/ {on=1} on' CHANGELOG.md); \
 	{ printf '%s\n\n## [Unreleased]\n\n## [%s] - %s\n%s\n' "$$head" "$(VERSION)" "$$(date +%F)" "$$notes"; \
 	  [ -z "$$older" ] || printf '\n%s\n' "$$older"; } > CHANGELOG.md; \
-	sed -i 's/^project(pkgtop VERSION [0-9.]*/project(pkgtop VERSION $(VERSION)/' CMakeLists.txt; \
+	sed -i 's/^project(heft VERSION [0-9.]*/project(heft VERSION $(VERSION)/' CMakeLists.txt; \
 	git commit -qam "chore(release): v$(VERSION)"; \
-	git tag -a "v$(VERSION)" -m "pkgtop $(VERSION)"; \
+	git tag -a "v$(VERSION)" -m "heft $(VERSION)"; \
 	git push origin HEAD "v$(VERSION)"

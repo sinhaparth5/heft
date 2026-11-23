@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: Tag must match the CMake version
         run: |
-          ver=$(sed -n 's/^project(pkgtop VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          ver=$(sed -n 's/^project(heft VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           [ "v$ver" = "$TAG" ] || { echo "::error::tag $TAG but CMakeLists.txt says $ver"; exit 1; }
       - name: Notes from CHANGELOG
         run: |
@@ -27,7 +27,7 @@ jobs:
             CHANGELOG.md > notes.md
           [ -s notes.md ] || { echo "::error::no '## [${TAG#v}]' section in CHANGELOG.md"; exit 1; }
       - name: Create draft release
-        run: gh release create "$TAG" --draft --verify-tag --title "pkgtop ${TAG#v}" --notes-file notes.md
+        run: gh release create "$TAG" --draft --verify-tag --title "heft ${TAG#v}" --notes-file notes.md
 
   build:
     needs: draft
