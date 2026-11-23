@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [2026.11.9] - 2026-11-23
 ### Changed
 - pkgtop is now **heft** (another project already uses the pkgtop name). The command, release tarballs (`heft-linux-<arch>`), repo and install URL are renamed. Re-running `install.sh` (the old URL still works) replaces an installed `pkgtop` with `heft` and leaves `pkgtop` as a symlink to it. `PKGTOP_VERSION` and `PKGTOP_BIN_DIR` are still read, and the size cache moves from `$XDG_CACHE_HOME/pkgtop` to `$XDG_CACHE_HOME/heft` on first run.
 
